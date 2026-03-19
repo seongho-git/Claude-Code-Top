@@ -57,3 +57,9 @@ cargo run -- --plan pro
 ## License
 
 MIT License
+
+## Developer
+
+- **Name**: Seongho Kim (Yonsei University)
+- **Email**: [seongho-kim@yonsei.ac.kr](mailto:seongho-kim@yonsei.ac.kr)
+- **GitHub**: [@seongho-git](https://github.com/seongho-git)

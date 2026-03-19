@@ -102,9 +102,11 @@ fn run_app(
 
                 match app.mode {
                     AppMode::Normal => match key.code {
-                        KeyCode::Up => app.move_up(),
-                        KeyCode::Down => app.move_down(),
-                        KeyCode::Char('q') => app.request_delete(),
+                        KeyCode::Up | KeyCode::Char('k') => app.move_up(),
+                        KeyCode::Down | KeyCode::Char('j') => app.move_down(),
+                        KeyCode::Char('q') | KeyCode::Delete => app.request_delete(),
+                        KeyCode::F(2) | KeyCode::Char('s') => app.toggle_sort(),
+                        KeyCode::F(5) | KeyCode::Char('r') => app.refresh_data(),
                         _ => {}
                     },
                     AppMode::ConfirmDelete { .. } => match key.code {

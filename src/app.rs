@@ -11,6 +11,13 @@ pub enum AppMode {
     ConfirmDelete { index: usize },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SortMode {
+    Ctx,
+    Cost,
+    Duration,
+}
+
 pub struct App {
     pub mode: AppMode,
     pub sessions: Vec<Session>,
@@ -19,24 +26,20 @@ pub struct App {
     pub plan: PlanType,
     pub weekly_cost: f64,
     pub weekly_tokens: u64,
-    pub username: String,
-    pub hostname: String,
+    pub daily_cost: f64,
+    pub monthly_cost: f64,
+    pub daily_saved: f64,
+    pub active_sessions: usize,
+    pub sparkline_data: Vec<u64>,
+    pub sort_mode: SortMode,
     pub should_quit: bool,
     pub cache: JsonlCache,
+    pub sys: sysinfo::System,
     pub last_refresh: Instant,
 }
 
 impl App {
     pub fn new(plan: PlanType) -> Self {
-        let username = std::env::var("USER")
-            .or_else(|_| std::env::var("USERNAME"))
-            .unwrap_or_else(|_| "user".to_string());
-
-        let hostname = hostname::get()
-            .ok()
-            .and_then(|h| h.into_string().ok())
-            .unwrap_or_else(|| "localhost".to_string());
-
         let mut app = App {
             mode: AppMode::Normal,
             sessions: Vec::new(),
@@ -45,10 +48,15 @@ impl App {
             plan,
             weekly_cost: 0.0,
             weekly_tokens: 0,
-            username,
-            hostname,
+            daily_cost: 0.0,
+            monthly_cost: 0.0,
+            daily_saved: 0.0,
+            active_sessions: 0,
+            sparkline_data: vec![0; 120], // Store some historical data points
+            sort_mode: SortMode::Ctx,
             should_quit: false,
             cache: JsonlCache::new(),
+            sys: sysinfo::System::new_all(),
             last_refresh: Instant::now(),
         };
 
@@ -57,15 +65,25 @@ impl App {
     }
 
     pub fn refresh_data(&mut self) {
-        self.sessions = scan_sessions(&mut self.cache);
+        self.sys.refresh_all();
+        self.sessions = scan_sessions(&mut self.cache, &mut self.sys);
 
-        // Recompute weekly totals
+        // Recompute totals
         self.weekly_cost = self.sessions.iter().map(|s| s.total_cost).sum();
-        self.weekly_tokens = self
-            .sessions
-            .iter()
-            .map(|s| s.total_usage.total_output())
-            .sum();
+        self.monthly_cost = self.weekly_cost * 4.0; // simple mock for now
+        self.daily_cost = self.weekly_cost / 7.0;   // simple mock for now
+        self.daily_saved = self.sessions.iter().map(|s| s.saved_cost).sum(); // Assuming saved_cost is total over session, mock as daily for now
+        self.weekly_tokens = self.sessions.iter().map(|s| s.total_usage.total_output()).sum();
+        self.active_sessions = self.sessions.iter().filter(|s| s.is_active).count();
+
+        // Update sparkline
+        let current_total_ctx = self.sessions.iter().filter(|s| s.is_active).map(|s| s.total_usage.total_input_all()).sum();
+        self.sparkline_data.push(current_total_ctx);
+        if self.sparkline_data.len() > 120 {
+            self.sparkline_data.remove(0);
+        }
+
+        self.apply_sorting();
 
         // Clamp selection
         if !self.sessions.is_empty() {
@@ -78,12 +96,29 @@ impl App {
 
         self.last_refresh = Instant::now();
     }
+    
+    pub fn apply_sorting(&mut self) {
+        match self.sort_mode {
+            SortMode::Cost => self.sort_by_cost(),
+            SortMode::Ctx => self.sort_by_ctx(),
+            SortMode::Duration => self.sort_by_duration(),
+        }
+    }
+    
+    pub fn toggle_sort(&mut self) {
+        self.sort_mode = match self.sort_mode {
+            SortMode::Ctx => SortMode::Cost,
+            SortMode::Cost => SortMode::Duration,
+            SortMode::Duration => SortMode::Ctx,
+        };
+        self.apply_sorting();
+    }
 
     pub fn refresh_interval(&self) -> Duration {
         if self.sessions.iter().any(|s| s.is_active) {
-            Duration::from_secs(10)
+            Duration::from_secs(2) // 2초 갱신 (명세)
         } else {
-            Duration::from_secs(60)
+            Duration::from_secs(5)
         }
     }
 
@@ -119,6 +154,22 @@ impl App {
             self.mode = AppMode::Normal;
             self.refresh_data();
         }
+    }
+
+    pub fn sort_by_ctx(&mut self) {
+        self.sessions.sort_by(|a, b| b.total_usage.total_input_all().cmp(&a.total_usage.total_input_all()));
+    }
+    
+    pub fn sort_by_cost(&mut self) {
+        self.sessions.sort_by(|a, b| b.total_cost.partial_cmp(&a.total_cost).unwrap_or(std::cmp::Ordering::Equal));
+    }
+    
+    pub fn sort_by_duration(&mut self) {
+        self.sessions.sort_by(|a, b| {
+            let dur_a = a.last_activity - a.first_activity;
+            let dur_b = b.last_activity - b.first_activity;
+            dur_b.cmp(&dur_a)
+        });
     }
 
     pub fn cancel_delete(&mut self) {

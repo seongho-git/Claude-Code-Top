@@ -1,96 +1,104 @@
-use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::style::{Modifier, Style};
-use ratatui::text::Span;
-use ratatui::widgets::{Block, Borders};
+use ratatui::text::{Line, Span};
+use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::Frame;
 
 use super::confirm::render_confirm_dialog;
 use super::header::render_header;
 use super::sessions::render_sessions;
-use super::theme::CLAUDE_ORANGE;
+use super::details::render_details;
+use super::sparkline::render_sparkline;
+use super::theme::{BG_BORDER, BG_MAIN, BG_STATUS, BLUE, CLAUDE_ORANGE, GREEN, RED, TEXT_IDLE};
 use crate::app::{App, AppMode};
 
 pub fn render(frame: &mut Frame, app: &App) {
     let size = frame.area();
 
-    // Outer border
+    // Base background
+    frame.render_widget(Block::default().style(Style::default().bg(BG_MAIN)), size);
+
+    // Title Bar border
     let outer_block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(CLAUDE_ORANGE))
+        .border_style(Style::default().fg(BG_BORDER))
         .title(Span::styled(
-            " cctop ",
-            Style::default()
-                .fg(CLAUDE_ORANGE)
-                .add_modifier(Modifier::BOLD),
-        ))
-        .title_bottom(Span::styled(
-            format!(" [{}]  Ctrl+C: quit ", app.plan.label()),
-            Style::default().fg(CLAUDE_ORANGE),
+            " 🔴 🟡 🟢  claude-code-monitor ",
+            Style::default().fg(CLAUDE_ORANGE).add_modifier(Modifier::BOLD),
         ));
-
+    let inner = outer_block.inner(size);
     frame.render_widget(outer_block, size);
 
-    // Inner area (inside border)
-    let inner = Rect {
-        x: size.x + 1,
-        y: size.y + 1,
-        width: size.width.saturating_sub(2),
-        height: size.height.saturating_sub(2),
-    };
-
-    if inner.height < 4 || inner.width < 20 {
-        return;
+    if inner.height < 15 || inner.width < 50 {
+        return; // Terminal too small
     }
 
-    // Split: header (2 lines) + separator label (1 line) + sessions list
-    let chunks = Layout::vertical([
-        Constraint::Length(2),
-        Constraint::Length(1),
-        Constraint::Min(1),
-    ])
-    .split(inner);
+    // Main vertical layout
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(2), // 0: Summary Header
+            Constraint::Length(1), // 1: LOCAL SESSIONS Header
+            Constraint::Min(5),    // 2: Sessions List
+            Constraint::Length(12),// 3: Session Details Panel (Split)
+            Constraint::Length(3), // 4: Sparkline
+            Constraint::Length(1), // 5: Status Bar
+        ])
+        .split(inner);
 
-    // Header: cost and token bars
-    render_header(
-        frame,
-        chunks[0],
-        app.weekly_cost,
-        app.weekly_tokens,
-        app.plan,
-    );
+    // 0. Summary Header
+    render_header(frame, chunks[0], app);
 
-    // Separator with navigation hints
-    let sep_text = Span::styled(
-        " Sessions                              ↑↓:navigate   q:delete",
-        Style::default().fg(CLAUDE_ORANGE),
-    );
-    frame.render_widget(
-        ratatui::widgets::Paragraph::new(ratatui::text::Line::from(sep_text)),
-        chunks[1],
-    );
+    // 1. Local Sessions Header
+    let local_header = Paragraph::new(Line::from(vec![
+        Span::styled(" LOCAL SESSIONS ", Style::default().fg(BLUE).bg(BG_BORDER)),
+        Span::styled(format!("  {} active ", app.active_sessions), Style::default().fg(GREEN)),
+    ]));
+    frame.render_widget(local_header, chunks[1]);
 
-    // Session list
+    // 2. Session List
     render_sessions(
         frame,
         chunks[2],
         &app.sessions,
         app.selected,
-        &app.username,
-        &app.hostname,
         app.scroll_offset,
     );
+
+    // 3. Detail Panel (Split Left/Right)
+    let details_chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .split(chunks[3]);
+        
+    let selected_session = app.sessions.get(app.selected);
+    render_details(frame, details_chunks[0], details_chunks[1], selected_session);
+
+    // 4. Sparkline
+    render_sparkline(frame, chunks[4], &app.sparkline_data);
+
+    // 5. Status Bar
+    let live_indicator = if app.sessions.iter().any(|s| s.is_active) {
+        Span::styled(" ● live ", Style::default().fg(GREEN))
+    } else {
+        Span::styled(" ○ idle ", Style::default().fg(RED))
+    };
+    
+    let status_text = Line::from(vec![
+        Span::styled(" F1:help  F2:sort  F5:refresh  q:quit    ", Style::default().fg(TEXT_IDLE)),
+        Span::styled("auto-refresh: 2s  ", Style::default().fg(TEXT_IDLE)),
+        live_indicator,
+    ]);
+    let status_bar = Paragraph::new(status_text)
+        .style(Style::default().bg(BG_STATUS));
+    frame.render_widget(status_bar, chunks[5]);
 
     // Confirm dialog overlay
     if let AppMode::ConfirmDelete { index } = app.mode {
         let session_name = app
             .sessions
             .get(index)
-            .map(|s| {
-                s.project_path
-                    .rsplit('/')
-                    .next()
-                    .unwrap_or(&s.project_path)
-            })
+            .map(|s| s.folder_name.as_str())
             .unwrap_or("unknown");
         render_confirm_dialog(frame, size, session_name);
     }

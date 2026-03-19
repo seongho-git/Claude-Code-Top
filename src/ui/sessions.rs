@@ -1,124 +1,123 @@
-use ratatui::layout::Rect;
-use ratatui::style::{Modifier, Style};
-use ratatui::text::{Line, Span};
-use ratatui::widgets::Paragraph;
+use ratatui::layout::{Constraint, Rect};
+use ratatui::style::Style;
+use ratatui::text::Span;
+use ratatui::widgets::{Cell, Row, Table, Block, Borders};
 use ratatui::Frame;
 
-use super::theme::{ACTIVE_GREEN, CLAUDE_ORANGE, INACTIVE_GRAY};
-use crate::data::types::Session;
+use super::theme::{BG_ACTIVE_ROW, BG_MAIN, BLUE, GREEN, ORANGE, RED, TEXT_DIM, TEXT_HIGHLIGHT, TEXT_IDLE, YELLOW};
+use crate::data::types::{Session, SessionStatus};
 
 pub fn render_sessions(
     frame: &mut Frame,
     area: Rect,
     sessions: &[Session],
     selected: usize,
-    username: &str,
-    hostname: &str,
     scroll_offset: usize,
 ) {
-    let is_wide = area.width >= 100;
+    let header_cells = vec![
+        Cell::from("PID").style(Style::default().fg(TEXT_DIM)),
+        Cell::from("PROJECT").style(Style::default().fg(TEXT_DIM)),
+        Cell::from("MODEL").style(Style::default().fg(TEXT_DIM)),
+        Cell::from("STATUS").style(Style::default().fg(TEXT_DIM)),
+        Cell::from("CTX USED / MAX").style(Style::default().fg(TEXT_DIM)),
+        Cell::from("CACHE").style(Style::default().fg(TEXT_DIM)),
+        Cell::from("COST").style(Style::default().fg(TEXT_DIM)),
+        Cell::from("DURATION").style(Style::default().fg(TEXT_DIM)),
+    ];
+    let header = Row::new(header_cells)
+        .style(Style::default().bg(BG_MAIN))
+        .height(1)
+        .bottom_margin(1);
 
-    let mut lines: Vec<Line> = Vec::new();
-    let mut row_starts: Vec<usize> = Vec::new(); // line index where each session starts
-
-    for (i, session) in sessions.iter().enumerate() {
-        row_starts.push(lines.len());
+    let rows = sessions.iter().enumerate().map(|(i, s)| {
         let is_selected = i == selected;
-        let base_style = if is_selected {
-            Style::default()
-                .fg(CLAUDE_ORANGE)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default()
+        let bg_color = if is_selected { BG_ACTIVE_ROW } else { BG_MAIN };
+        
+        let path_str = s.project_path.rsplit('/').next().unwrap_or(&s.project_path).to_string();
+        
+        let pid_str = s.pid.map_or("-".to_string(), |p| p.to_string());
+        
+        let status_span = match s.status {
+            SessionStatus::Running => Span::styled("● running", Style::default().fg(GREEN)),
+            SessionStatus::Waiting => Span::styled("⏸ waiting", Style::default().fg(YELLOW)),
+            SessionStatus::Idle => Span::styled("○ idle", Style::default().fg(TEXT_IDLE)),
+            SessionStatus::Error => Span::styled("✕ error", Style::default().fg(RED)),
         };
 
-        // Path line: "▶ user@host:/path" or "  user@host:/path"
-        let marker = if is_selected { "▶ " } else { "  " };
-        let path_line = Line::from(vec![Span::styled(
-            format!("{}{}@{}:{}", marker, username, hostname, session.project_path),
-            base_style,
-        )]);
-        lines.push(path_line);
-
-        // Info content
-        let display_name = session
-            .project_path
-            .rsplit('/')
-            .next()
-            .unwrap_or(&session.project_path);
-
-        let active_span = if session.is_active {
-            Span::styled(
-                " ● ACTIVE",
-                Style::default()
-                    .fg(ACTIVE_GREEN)
-                    .add_modifier(Modifier::BOLD),
-            )
-        } else {
-            Span::styled(" ○", Style::default().fg(INACTIVE_GRAY))
-        };
-
-        let tokens_str = format!("  {} tok", format_tokens(session.total_usage.total_output()));
-
-        let model_str = if session.last_model.is_empty() {
-            String::new()
-        } else if session.has_thinking {
-            format!("  {} / thinking", session.last_model)
-        } else {
-            format!("  {}", session.last_model)
-        };
-
-        if is_wide {
-            // Single info line
-            let mut spans = vec![
-                Span::styled(format!("  {}", display_name), base_style),
-                active_span,
-                Span::styled(tokens_str, base_style),
-            ];
-            if !model_str.is_empty() {
-                spans.push(Span::styled(model_str, Style::default().fg(INACTIVE_GRAY)));
-            }
-            lines.push(Line::from(spans));
-        } else {
-            // Two info lines
-            let info_line1 = Line::from(vec![
-                Span::styled(format!("  {}", display_name), base_style),
-                active_span,
-                Span::styled(tokens_str, base_style),
-            ]);
-            lines.push(info_line1);
-
-            if !model_str.is_empty() {
-                let info_line2 = Line::from(vec![Span::styled(
-                    format!("  {}", model_str.trim()),
-                    Style::default().fg(INACTIVE_GRAY),
-                )]);
-                lines.push(info_line2);
-            }
+        let mut model_str = s.last_model.clone();
+        if model_str.starts_with("claude-") {
+            model_str = model_str.replace("claude-", "");
         }
+        
+        let max_ctx = if model_str.contains("opus") { 1_000_000 } else { 200_000 };
+        let tokens = s.total_usage.total_input_all();
+        let ctx_ratio = (tokens as f64 / max_ctx as f64).min(1.0);
+        let ctx_color = if ctx_ratio > 0.9 { RED } else if ctx_ratio > 0.7 { ORANGE } else { BLUE };
+        
+        let bar_len: usize = 10;
+        let filled_len = (ctx_ratio * bar_len as f64).round() as usize;
+        let bar_str = format!("[{}{}]", "█".repeat(filled_len), "░".repeat(bar_len.saturating_sub(filled_len)));
+        
+        let ctx_str = format!("{} / {}k {} {:.0}%", 
+            format_tokens(tokens), max_ctx / 1000, bar_str, ctx_ratio * 100.0);
 
-        // Empty line between sessions
-        if i + 1 < sessions.len() {
-            lines.push(Line::from(""));
+        let hit_rate = s.total_usage.hit_rate();
+        let hit_color = if hit_rate >= 60.0 { GREEN } else if hit_rate >= 30.0 { YELLOW } else { RED };
+
+        let duration_secs = (s.last_activity - s.first_activity).num_seconds().max(0);
+        let hours = duration_secs / 3600;
+        let mins = (duration_secs % 3600) / 60;
+        let duration_str = format!("{:02}:{:02}h", hours, mins);
+
+        let cells = vec![
+            Cell::from(Span::styled(pid_str, Style::default().fg(TEXT_HIGHLIGHT))),
+            Cell::from(Span::styled(path_str, Style::default().fg(BLUE))),
+            Cell::from(model_str),
+            Cell::from(status_span),
+            Cell::from(Span::styled(ctx_str, Style::default().fg(ctx_color))),
+            Cell::from(Span::styled(format!("{:.0}%", hit_rate), Style::default().fg(hit_color))),
+            Cell::from(format!("${:.2}", s.total_cost)),
+            Cell::from(duration_str),
+        ];
+
+        let mut row_style = Style::default().bg(bg_color);
+        if s.status == SessionStatus::Idle || s.status == SessionStatus::Error {
+            row_style = row_style.fg(TEXT_IDLE);
         }
-    }
+        
+        Row::new(cells).style(row_style).height(1)
+    });
 
-    // Calculate scroll based on selected session
-    let visible_height = area.height as usize;
-    let selected_start = row_starts.get(selected).copied().unwrap_or(0);
-    let lines_per_session = if is_wide { 3 } else { 4 }; // approximate
-    let selected_end = selected_start + lines_per_session;
+    let widths = [
+        Constraint::Length(6),  // PID
+        Constraint::Length(18), // PROJECT
+        Constraint::Length(12), // MODEL
+        Constraint::Length(10), // STATUS
+        Constraint::Length(25), // CTX USED/MAX
+        Constraint::Length(6),  // CACHE
+        Constraint::Length(8),  // COST
+        Constraint::Length(9),  // DURATION
+    ];
 
-    let actual_offset = if selected_start < scroll_offset {
-        selected_start
-    } else if selected_end > scroll_offset + visible_height {
-        selected_end.saturating_sub(visible_height)
+    // Scroll state management is required for Table if we want smooth scrolling.
+    // For now we just use a basic offset if needed, or rely on ratatui's TableScroll state.
+    // Since we don't have ratatui's stateful table setup here smoothly, we can manually slice.
+    
+    let visible_rows = area.height.saturating_sub(2) as usize;
+    let actual_offset = if selected >= scroll_offset + visible_rows {
+        selected - visible_rows + 1
+    } else if selected < scroll_offset {
+        selected
     } else {
         scroll_offset
     };
 
-    let paragraph = Paragraph::new(lines).scroll((actual_offset as u16, 0));
-    frame.render_widget(paragraph, area);
+    let table = Table::new(rows.skip(actual_offset).take(visible_rows).collect::<Vec<_>>(), widths)
+        .header(header)
+        .block(Block::default().borders(Borders::NONE))
+        .column_spacing(1);
+
+    frame.render_widget(table, area);
 }
 
 fn format_tokens(n: u64) -> String {
