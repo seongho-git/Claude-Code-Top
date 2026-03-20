@@ -1,23 +1,18 @@
 use ratatui::style::Color;
 
-// Base Theme Colors
-pub const CLAUDE_ORANGE: Color = Color::Rgb(232, 143, 44); // Soft orange base
+pub const CLAUDE_ORANGE: Color = Color::Rgb(217, 119, 6);
+pub const TEXT_HIGHLIGHT: Color = Color::Rgb(246, 240, 232);
+pub const TEXT_DIM: Color = Color::Rgb(186, 171, 152);
+pub const TEXT_IDLE: Color = Color::Rgb(150, 136, 118);
 
-// Text Colors
-pub const TEXT_HIGHLIGHT: Color = Color::Rgb(230, 237, 243); // #e6edf3
-pub const TEXT_DIM: Color = Color::Rgb(139, 148, 158);       // #8b949e
-pub const TEXT_IDLE: Color = Color::Rgb(110, 118, 129);      // #6e7681
+pub const BLUE: Color = Color::Rgb(125, 177, 255);
+pub const GREEN: Color = Color::Rgb(101, 214, 173);
+pub const YELLOW: Color = Color::Rgb(240, 198, 116);
+pub const ORANGE: Color = Color::Rgb(245, 158, 11);
+pub const RED: Color = Color::Rgb(248, 113, 113);
 
-// Indicator Colors
-pub const BLUE: Color = Color::Rgb(88, 166, 255);            // #58a6ff
-pub const GREEN: Color = Color::Rgb(63, 185, 80);            // #3fb950
-pub const YELLOW: Color = Color::Rgb(210, 153, 34);          // #d29922
-pub const ORANGE: Color = Color::Rgb(247, 129, 102);         // #f78166
-pub const RED: Color = Color::Rgb(248, 81, 73);              // #f85149
-
-// Backgrounds
-pub const BG_MAIN: Color = Color::Rgb(13, 17, 23);           // #0d1117
-pub const BG_STATUS: Color = Color::Rgb(31, 41, 55);         // #1f2937
-pub const BG_ACTIVE_ROW: Color = Color::Rgb(28, 43, 58);     // #1c2b3a
-pub const BG_BORDER: Color = Color::Rgb(33, 38, 45);         // #21262d
-
+pub const BG_MAIN: Color = Color::Rgb(32, 23, 16);
+pub const BG_PANEL: Color = Color::Rgb(43, 31, 22);
+pub const BG_STATUS: Color = Color::Rgb(55, 38, 26);
+pub const BG_ACTIVE_ROW: Color = Color::Rgb(70, 44, 23);
+pub const BG_BORDER: Color = Color::Rgb(217, 119, 6);

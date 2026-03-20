@@ -4,34 +4,40 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use ratatui::Frame;
 
-use super::theme::CLAUDE_ORANGE;
+use super::theme::{BG_BORDER, BG_PANEL, CLAUDE_ORANGE, TEXT_HIGHLIGHT, TEXT_IDLE};
 
 pub fn render_confirm_dialog(frame: &mut Frame, area: Rect, session_name: &str) {
-    let popup = centered_rect(50, 5, area);
-
+    let popup = centered_rect(60, 7, area);
     frame.render_widget(Clear, popup);
 
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(CLAUDE_ORANGE))
+        .border_style(Style::default().fg(BG_BORDER))
+        .style(Style::default().bg(BG_PANEL))
         .title(Span::styled(
             " Confirm Delete ",
-            Style::default()
-                .fg(CLAUDE_ORANGE)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(CLAUDE_ORANGE),
         ));
 
     let text = vec![
         Line::from(""),
-        Line::from(format!("  Delete session '{}'?", session_name)),
-        Line::from(Span::styled(
-            "  [y/N]",
-            Style::default().add_modifier(Modifier::BOLD),
-        )),
+        Line::from(vec![
+            Span::styled("  Forget session ", Style::default().fg(TEXT_IDLE)),
+            Span::styled(
+                session_name.to_string(),
+                Style::default()
+                    .fg(TEXT_HIGHLIGHT)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled("?", Style::default().fg(TEXT_IDLE)),
+        ]),
+        Line::from(vec![
+            Span::styled("  Press F to confirm", Style::default().fg(CLAUDE_ORANGE)),
+            Span::styled(" · any other key cancels", Style::default().fg(TEXT_IDLE)),
+        ]),
     ];
 
-    let paragraph = Paragraph::new(text).block(block);
-    frame.render_widget(paragraph, popup);
+    frame.render_widget(Paragraph::new(text).block(block), popup);
 }
 
 fn centered_rect(percent_x: u16, height: u16, area: Rect) -> Rect {

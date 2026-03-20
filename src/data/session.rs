@@ -2,48 +2,39 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use chrono::{Duration, Utc};
+use chrono::{Datelike, Duration, Utc};
 use sysinfo::System;
 
 use super::jsonl::{discover_jsonl_files, file_mtime, parse_jsonl_file, JsonlCache};
 use super::pricing::calculate_cost;
-use super::types::{Session, SessionStatus, TokenUsage};
+use super::types::{EffortLevel, Session, SessionStatus, TokenUsage, UsageSummary};
 
-/// Decode an encoded project folder name back to an absolute path.
-/// e.g. "-home-seongho-archive-Claude-Code-Usage-Monitor" → "/home/seongho/archive/Claude-Code-Usage-Monitor"
-///
-/// Greedy algorithm: split on '-', walk left-to-right, try longest runs
-/// that form existing directories to handle hyphenated dir names.
+#[derive(Debug, Clone, Default)]
+pub struct ScanSummary {
+    pub sessions: Vec<Session>,
+    pub today: UsageSummary,
+    pub month: UsageSummary,
+}
+
 pub fn decode_project_path(encoded: &str) -> String {
-    // The encoding replaces '/' with '-' and prepends '-' for the root '/'
-    // So "-home-seongho-project" means "/home/seongho/project"
-    // But hyphens in real dir names are preserved, so we need greedy matching.
-
     if !encoded.starts_with('-') {
         return encoded.to_string();
     }
 
-    // Remove leading '-' and split by '-'
     let rest = &encoded[1..];
     let parts: Vec<&str> = rest.split('-').collect();
-
     if parts.is_empty() {
         return format!("/{}", rest);
     }
 
     let mut result = String::new();
     let mut i = 0;
-
     while i < parts.len() {
-        // Try greedy: longest run of parts joined by '-' that exists as a dir
-        let mut best_len = 1; // at minimum, take one part
-
-        // Try joining from parts[i..i+len] for decreasing lengths
+        let mut best_len = 1;
         let max_try = parts.len() - i;
         for try_len in (1..=max_try).rev() {
             let candidate_segment = parts[i..i + try_len].join("-");
             let candidate_path = format!("{}/{}", result, candidate_segment);
-
             if Path::new(&candidate_path).exists() {
                 best_len = try_len;
                 break;
@@ -59,27 +50,25 @@ pub fn decode_project_path(encoded: &str) -> String {
     result
 }
 
-/// Scan all project folders and build session list.
-pub fn scan_sessions(cache: &mut JsonlCache, sys: &mut System) -> Vec<Session> {
+pub fn scan_sessions(cache: &mut JsonlCache, sys: &mut System) -> ScanSummary {
     let claude_dir = match dirs::home_dir() {
         Some(h) => h.join(".claude").join("projects"),
-        None => return Vec::new(),
+        None => return ScanSummary::default(),
     };
-
     if !claude_dir.is_dir() {
-        return Vec::new();
+        return ScanSummary::default();
     }
 
     let entries = match fs::read_dir(&claude_dir) {
         Ok(e) => e,
-        Err(_) => return Vec::new(),
+        Err(_) => return ScanSummary::default(),
     };
 
     let now = Utc::now();
-    let week_ago = now - Duration::days(7);
     let active_threshold = now - Duration::minutes(30);
-    
-    // Build a map of active 'claude' processes and their current working directories
+    let today = now.date_naive();
+    let current_month = (now.year(), now.month());
+
     let mut claude_pids = HashMap::new();
     for (pid, process) in sys.processes() {
         if process.name().to_string_lossy().contains("claude") {
@@ -89,7 +78,7 @@ pub fn scan_sessions(cache: &mut JsonlCache, sys: &mut System) -> Vec<Session> {
         }
     }
 
-    let mut sessions = Vec::new();
+    let mut summary = ScanSummary::default();
 
     for entry in entries.flatten() {
         let path = entry.path();
@@ -110,38 +99,41 @@ pub fn scan_sessions(cache: &mut JsonlCache, sys: &mut System) -> Vec<Session> {
         let project_path = decode_project_path(&folder_name);
         let active_pid = claude_pids.get(&project_path).copied();
 
-        let session = build_session(
+        if let Some(session) = build_session(
             &folder_name,
             &project_path,
             active_pid,
             &jsonl_files,
             cache,
-            week_ago,
             active_threshold,
-        );
-        if let Some(s) = session {
-            sessions.push(s);
+            today,
+            current_month,
+            &mut summary,
+        ) {
+            summary.sessions.push(session);
         }
     }
 
-    // Sort: active first, then by last_activity descending
-    sessions.sort_by(|a, b| {
+    summary.sessions.sort_by(|a, b| {
         b.is_active
             .cmp(&a.is_active)
             .then_with(|| b.last_activity.cmp(&a.last_activity))
     });
 
-    sessions
+    summary
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_session(
     folder_name: &str,
     project_path: &str,
     active_pid: Option<u32>,
     jsonl_files: &[PathBuf],
     cache: &mut JsonlCache,
-    week_ago: chrono::DateTime<Utc>,
     active_threshold: chrono::DateTime<Utc>,
+    today: chrono::NaiveDate,
+    current_month: (i32, u32),
+    summary: &mut ScanSummary,
 ) -> Option<Session> {
     let mut total_usage = TokenUsage::default();
     let mut total_cost = 0.0f64;
@@ -150,40 +142,43 @@ fn build_session(
     let mut has_thinking = false;
     let mut latest_timestamp = chrono::DateTime::<Utc>::MIN_UTC;
     let mut first_timestamp = chrono::DateTime::<Utc>::MAX_UTC;
-
-    // Track latest file mtime for active status
     let mut latest_mtime = chrono::DateTime::<Utc>::MIN_UTC;
-
-    // Collect per-model usage for cost in weekly window
-    let mut weekly_usage_by_model: HashMap<String, TokenUsage> = HashMap::new();
+    let mut usage_by_model: HashMap<String, TokenUsage> = HashMap::new();
 
     for file in jsonl_files {
         if let Some(mtime) = file_mtime(file) {
-            if mtime > latest_mtime {
-                latest_mtime = mtime;
-            }
+            latest_mtime = latest_mtime.max(mtime);
         }
 
         let entries = parse_jsonl_file(file, cache);
-
         for entry in &entries {
-            // Only count entries within the weekly window for cost/usage totals
-            if entry.timestamp >= week_ago {
-                let model_usage = weekly_usage_by_model
-                    .entry(entry.model.clone())
-                    .or_default();
-                model_usage.add(&entry.usage);
-                total_usage.add(&entry.usage);
+            usage_by_model
+                .entry(entry.model.clone())
+                .or_default()
+                .add(&entry.usage);
+            total_usage.add(&entry.usage);
+
+            let date = entry.timestamp.date_naive();
+            let month = (entry.timestamp.year(), entry.timestamp.month());
+            let (cost, saved) = calculate_cost(&entry.model, &entry.usage);
+
+            if date == today {
+                summary.today.usage.add(&entry.usage);
+                summary.today.cost += cost;
+                summary.today.saved += saved;
+            }
+            if month == current_month {
+                summary.month.usage.add(&entry.usage);
+                summary.month.cost += cost;
+                summary.month.saved += saved;
             }
 
             if entry.has_thinking {
                 has_thinking = true;
             }
-
             if entry.timestamp < first_timestamp {
                 first_timestamp = entry.timestamp;
             }
-
             if entry.timestamp > latest_timestamp {
                 latest_timestamp = entry.timestamp;
                 last_model = entry.model.clone();
@@ -195,29 +190,24 @@ fn build_session(
         first_timestamp = latest_mtime;
     }
 
-    // Calculate weekly cost by model
-    for (model, usage) in &weekly_usage_by_model {
+    for (model, usage) in &usage_by_model {
         let (cost, saved) = calculate_cost(model, usage);
         total_cost += cost;
         saved_cost += saved;
     }
 
-    // Determine active status from file mtime and pid
     let (is_active, status) = if active_pid.is_some() {
-        // If there's an active process matching the directory
         if latest_mtime >= Utc::now() - Duration::minutes(5) {
             (true, SessionStatus::Running)
         } else {
             (true, SessionStatus::Waiting)
         }
+    } else if latest_mtime >= active_threshold {
+        (true, SessionStatus::Idle)
     } else {
-        if latest_mtime >= active_threshold {
-            (true, SessionStatus::Idle)
-        } else {
-            (false, SessionStatus::Idle)
-        }
+        (false, SessionStatus::Idle)
     };
-    
+
     let burn_rate = if is_active && total_usage.output_tokens > 0 {
         let mins = (latest_timestamp - first_timestamp).num_minutes() as f64;
         if mins > 0.0 {
@@ -235,12 +225,11 @@ fn build_session(
         latest_mtime
     };
 
-    // Skip sessions with no assistant entries at all
-    if last_model.is_empty() && total_usage.output_tokens == 0 {
-        // Still include if there are files, just might not have weekly data
-        if latest_mtime == chrono::DateTime::<Utc>::MIN_UTC {
-            return None;
-        }
+    if last_model.is_empty()
+        && total_usage.output_tokens == 0
+        && latest_mtime == chrono::DateTime::<Utc>::MIN_UTC
+    {
+        return None;
     }
 
     Some(Session {
@@ -252,6 +241,11 @@ fn build_session(
         total_cost,
         saved_cost,
         last_model,
+        effort: if has_thinking {
+            EffortLevel::Deep
+        } else {
+            EffortLevel::Standard
+        },
         has_thinking,
         first_activity: first_timestamp,
         last_activity,

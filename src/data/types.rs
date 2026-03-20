@@ -89,6 +89,10 @@ impl TokenUsage {
         self.input_tokens + self.cache_creation_input_tokens + self.cache_read_input_tokens
     }
 
+    pub fn total_tokens(&self) -> u64 {
+        self.total_input_all() + self.output_tokens
+    }
+
     pub fn hit_rate(&self) -> f64 {
         let total = self.total_input_all();
         if total > 0 {
@@ -123,6 +127,28 @@ pub enum SessionStatus {
     Error,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum EffortLevel {
+    Standard,
+    Deep,
+}
+
+impl EffortLevel {
+    pub fn label(&self) -> &'static str {
+        match self {
+            EffortLevel::Standard => "standard",
+            EffortLevel::Deep => "think",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct UsageSummary {
+    pub usage: TokenUsage,
+    pub cost: f64,
+    pub saved: f64,
+}
+
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub struct Session {
@@ -134,6 +160,7 @@ pub struct Session {
     pub total_cost: f64,
     pub saved_cost: f64,
     pub last_model: String,
+    pub effort: EffortLevel,
     pub has_thinking: bool,
     pub first_activity: DateTime<Utc>,
     pub last_activity: DateTime<Utc>,

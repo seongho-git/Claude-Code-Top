@@ -1,104 +1,214 @@
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Paragraph};
+use ratatui::widgets::{Block, Borders, Gauge, Paragraph};
 use ratatui::Frame;
 
-use super::theme::{BG_BORDER, BLUE, GREEN, ORANGE, RED, TEXT_DIM, TEXT_HIGHLIGHT, TEXT_IDLE, YELLOW};
+use super::theme::{
+    BG_BORDER, BG_MAIN, BG_PANEL, BLUE, GREEN, ORANGE, RED, TEXT_DIM, TEXT_HIGHLIGHT, TEXT_IDLE,
+    YELLOW,
+};
 use crate::data::types::Session;
 
-pub fn render_details(frame: &mut Frame, left_area: Rect, right_area: Rect, session: Option<&Session>) {
+pub fn render_details(
+    frame: &mut Frame,
+    left_area: Rect,
+    right_area: Rect,
+    session: Option<&Session>,
+) {
     if let Some(s) = session {
-        // --- LEFT PANEL (Cost breakdown & Hit Rate) ---
-        let mut left_lines = vec![];
-        
-        let display_name = s.project_path.rsplit('/').next().unwrap_or(&s.project_path);
-        let status_type = if s.is_active { "local" } else { "offline" };
-        left_lines.push(Line::from(vec![
-            Span::styled(format!("▶ session {}  ~{}  [{}]", s.pid.unwrap_or(0), display_name, status_type), Style::default().fg(BLUE).add_modifier(Modifier::BOLD)),
-        ]));
-        left_lines.push(Line::from(""));
-        
-        // Cost Breakdown
-        let usage = &s.total_usage;
-        let c_in = usage.input_tokens;
-        let c_out = usage.output_tokens;
-        let c_cr = usage.cache_read_input_tokens;
-        let c_cw = usage.cache_creation_input_tokens;
-        
-        left_lines.push(Line::from(format!("input tokens   {:>8}", c_in)));
-        left_lines.push(Line::from(format!("output tokens  {:>8}", c_out)));
-        left_lines.push(Line::from(""));
-        
-        let hit_rate = usage.hit_rate();
-        left_lines.push(Line::from(vec![
-            Span::styled(format!("cache reads    {:>8}   ({:.0}%)   ", c_cr, hit_rate), Style::default().fg(TEXT_IDLE)),
-            Span::styled(format!("(saved ~${:.2})", s.saved_cost), Style::default().fg(GREEN)),
-        ]));
-        left_lines.push(Line::from(format!("cache writes   {:>8}", c_cw)));
-        left_lines.push(Line::from(""));
-        
-        left_lines.push(Line::from(vec![
-            Span::styled("total cost     ", Style::default().fg(TEXT_HIGHLIGHT)),
-            Span::styled(format!("${:.2}   ", s.total_cost), Style::default().fg(ORANGE).add_modifier(Modifier::BOLD)),
-            Span::styled(format!("(without cache: ~${:.2})", s.total_cost + s.saved_cost), Style::default().fg(TEXT_DIM)),
-        ]));
-        
-        left_lines.push(Line::from(""));
-        let bar_len: usize = 20;
-        let filled_len = ((hit_rate / 100.0) * bar_len as f64).round() as usize;
-        let bar_str = format!("[{}{}]", "█".repeat(filled_len), "░".repeat(bar_len.saturating_sub(filled_len)));
-        let hit_color = if hit_rate >= 60.0 { GREEN } else if hit_rate >= 30.0 { YELLOW } else { RED };
-        
-        left_lines.push(Line::from(vec![
-            Span::raw("hit rate bar   "),
-            Span::styled(format!("{} {:.0}%", bar_str, hit_rate), Style::default().fg(hit_color)),
-        ]));
-
-        let left_block = Block::default().borders(Borders::ALL).border_style(Style::default().fg(BG_BORDER))
-            .title(Span::styled(" Session Details ", Style::default().fg(BLUE)));
-        frame.render_widget(Paragraph::new(left_lines).block(left_block), left_area);
-
-        // --- RIGHT PANEL (Tool Log & Cache info) ---
-        let mut right_lines = vec![];
-        right_lines.push(Line::from(Span::styled("tool activity log (placeholder)", Style::default().fg(TEXT_DIM))));
-        right_lines.push(Line::from(""));
-        right_lines.push(Line::from(Span::styled("14:08   read_file   src/routes/api.ts", Style::default().fg(TEXT_IDLE))));
-        right_lines.push(Line::from(Span::styled("14:11   edit_file   src/routes/api.ts", Style::default().fg(TEXT_IDLE))));
-        right_lines.push(Line::from(vec![Span::raw("14:15   bash        "), Span::styled("npm test", Style::default().fg(TEXT_IDLE))]));
-        right_lines.push(Line::from(vec![Span::raw("14:19   bash        "), Span::styled("✓ 14 passed", Style::default().fg(GREEN))]));
-        
-        // Cache Box
-        let box_y = right_area.height.saturating_sub(7);
-        if right_area.height >= 10 {
-            let chunks = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([Constraint::Length(box_y), Constraint::Min(6)])
-                .split(right_area);
-            
-            let right_block = Block::default().borders(Borders::ALL).border_style(Style::default().fg(BG_BORDER))
-                .title(Span::styled(" Tool Log ", Style::default().fg(BLUE)));
-            frame.render_widget(Paragraph::new(right_lines).block(right_block), chunks[0]);
-
-            let cache_box = vec![
-                Line::from(Span::styled(" 시스템 프롬프트 + 파일 컨텍스트가 반복될 때 캐시 로드.", Style::default().fg(TEXT_IDLE))),
-                Line::from(Span::styled(" read  0.10× 단가  →  90% 절감", Style::default().fg(GREEN))),
-                Line::from(Span::styled(" write 1.25× 단가  →  첫 저장 비용", Style::default().fg(ORANGE))),
-                Line::from(""),
-                Line::from(Span::styled(format!(" 이 세션 절감액  ${:.2}", s.saved_cost), Style::default().fg(TEXT_HIGHLIGHT))),
-            ];
-            let cache_block = Block::default().borders(Borders::ALL).border_style(Style::default().fg(BG_BORDER))
-                .title(Span::styled(format!(" cache hit rate: {:.0}% ", hit_rate), Style::default().fg(BLUE)));
-            frame.render_widget(Paragraph::new(cache_box).block(cache_block), chunks[1]);
+        let model = if s.last_model.is_empty() {
+            "-"
         } else {
-            let right_block = Block::default().borders(Borders::ALL).border_style(Style::default().fg(BG_BORDER))
-                .title(Span::styled(" Tool Log ", Style::default().fg(BLUE)));
-            frame.render_widget(Paragraph::new(right_lines).block(right_block), right_area);
-        }
+            &s.last_model
+        };
+        let duration_secs = (s.last_activity - s.first_activity).num_seconds().max(0);
+        let meta_lines = vec![
+            Line::from(vec![
+                Span::styled("PID ", Style::default().fg(TEXT_DIM)),
+                Span::styled(
+                    s.pid.map_or("-".to_string(), |p| p.to_string()),
+                    Style::default().fg(TEXT_HIGHLIGHT),
+                ),
+                Span::styled("   MODEL ", Style::default().fg(TEXT_DIM)),
+                Span::styled(model, Style::default().fg(BLUE)),
+            ]),
+            Line::from(vec![
+                Span::styled("EFFORT ", Style::default().fg(TEXT_DIM)),
+                Span::styled(s.effort.label(), Style::default().fg(YELLOW)),
+                Span::styled("   DURATION ", Style::default().fg(TEXT_DIM)),
+                Span::styled(
+                    format_duration(duration_secs),
+                    Style::default().fg(TEXT_HIGHLIGHT),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled("PROJECT ", Style::default().fg(TEXT_DIM)),
+                Span::styled(&s.project_path, Style::default().fg(TEXT_IDLE)),
+            ]),
+            Line::from(vec![
+                Span::styled("LAST ACTIVE ", Style::default().fg(TEXT_DIM)),
+                Span::styled(
+                    s.last_activity.format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+                    Style::default().fg(TEXT_HIGHLIGHT),
+                ),
+            ]),
+        ];
+        frame.render_widget(
+            Paragraph::new(meta_lines).block(panel_block(" Session Overview ")),
+            left_area,
+        );
 
+        let usage = &s.total_usage;
+        let hit_rate = usage.hit_rate();
+        let ctx_ratio = if model.contains("opus") {
+            usage.total_input_all() as f64 / 1_000_000.0
+        } else {
+            usage.total_input_all() as f64 / 200_000.0
+        };
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(8),
+                Constraint::Length(3),
+                Constraint::Min(5),
+            ])
+            .split(right_area);
+
+        let cost_lines = vec![
+            Line::from(vec![
+                Span::styled("Cost ", Style::default().fg(TEXT_DIM)),
+                Span::styled(
+                    format!("${:.2}", s.total_cost),
+                    Style::default().fg(ORANGE).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled("   Saved ", Style::default().fg(TEXT_DIM)),
+                Span::styled(format!("${:.2}", s.saved_cost), Style::default().fg(GREEN)),
+            ]),
+            Line::from(vec![
+                Span::styled("Input ", Style::default().fg(TEXT_DIM)),
+                Span::raw(format_tokens(usage.input_tokens)),
+                Span::styled("   Output ", Style::default().fg(TEXT_DIM)),
+                Span::raw(format_tokens(usage.output_tokens)),
+            ]),
+            Line::from(vec![
+                Span::styled("Cache read ", Style::default().fg(TEXT_DIM)),
+                Span::raw(format_tokens(usage.cache_read_input_tokens)),
+                Span::styled("   Cache write ", Style::default().fg(TEXT_DIM)),
+                Span::raw(format_tokens(usage.cache_creation_input_tokens)),
+            ]),
+            Line::from(vec![
+                Span::styled("Burn rate ", Style::default().fg(TEXT_DIM)),
+                Span::styled(
+                    format!("{:.0} out tok/min", s.burn_rate),
+                    Style::default().fg(TEXT_HIGHLIGHT),
+                ),
+            ]),
+        ];
+        frame.render_widget(
+            Paragraph::new(cost_lines).block(panel_block(" Usage & Cost ")),
+            chunks[0],
+        );
+
+        frame.render_widget(
+            Gauge::default()
+                .block(panel_block(" Cache hit rate "))
+                .gauge_style(
+                    Style::default()
+                        .fg(if hit_rate >= 60.0 {
+                            GREEN
+                        } else if hit_rate >= 30.0 {
+                            YELLOW
+                        } else {
+                            RED
+                        })
+                        .bg(BG_MAIN),
+                )
+                .ratio((hit_rate / 100.0).clamp(0.0, 1.0))
+                .label(format!("{:.0}%", hit_rate))
+                .use_unicode(true),
+            chunks[1],
+        );
+
+        let ctx_pct = ctx_ratio.clamp(0.0, 1.0);
+        let ctx_color = if ctx_pct >= 0.9 {
+            RED
+        } else if ctx_pct >= 0.7 {
+            ORANGE
+        } else {
+            BLUE
+        };
+        let detail_lines = vec![
+            Line::from(vec![
+                Span::styled("Session total tokens ", Style::default().fg(TEXT_DIM)),
+                Span::styled(
+                    format_tokens(usage.total_tokens()),
+                    Style::default().fg(TEXT_HIGHLIGHT),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled("Context used ", Style::default().fg(TEXT_DIM)),
+                Span::styled(
+                    format!("{:.0}% of model window", ctx_pct * 100.0),
+                    Style::default().fg(ctx_color),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled("Thinking mode ", Style::default().fg(TEXT_DIM)),
+                Span::styled(
+                    if s.has_thinking {
+                        "enabled"
+                    } else {
+                        "not observed"
+                    },
+                    Style::default().fg(YELLOW),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled("Files ", Style::default().fg(TEXT_DIM)),
+                Span::styled(
+                    format!("{} jsonl logs", s.jsonl_files.len()),
+                    Style::default().fg(TEXT_HIGHLIGHT),
+                ),
+            ]),
+        ];
+        frame.render_widget(
+            Paragraph::new(detail_lines).block(panel_block(" Session Detail ")),
+            chunks[2],
+        );
     } else {
-        let block = Block::default().borders(Borders::ALL).border_style(Style::default().fg(BG_BORDER));
-        frame.render_widget(Paragraph::new("No session selected").block(block.clone()), left_area);
-        frame.render_widget(Paragraph::new("No session selected").block(block), right_area);
+        frame.render_widget(
+            Paragraph::new("No session selected").block(panel_block(" Session Overview ")),
+            left_area,
+        );
+        frame.render_widget(
+            Paragraph::new("No session selected").block(panel_block(" Session Detail ")),
+            right_area,
+        );
     }
+}
+
+fn panel_block(title: &str) -> Block<'static> {
+    Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(BG_BORDER))
+        .style(Style::default().bg(BG_PANEL))
+        .title(Span::styled(
+            title.to_string(),
+            Style::default().fg(TEXT_HIGHLIGHT),
+        ))
+}
+fn format_tokens(n: u64) -> String {
+    if n >= 1_000_000 {
+        format!("{:.2}M", n as f64 / 1_000_000.0)
+    } else if n >= 1_000 {
+        format!("{:.1}k", n as f64 / 1_000.0)
+    } else {
+        n.to_string()
+    }
+}
+fn format_duration(secs: i64) -> String {
+    let hours = secs / 3600;
+    let mins = (secs % 3600) / 60;
+    format!("{:02}:{:02}", hours, mins)
 }

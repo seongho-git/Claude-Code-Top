@@ -28,7 +28,7 @@ pub struct App {
     pub weekly_tokens: u64,
     pub daily_cost: f64,
     pub monthly_cost: f64,
-    pub daily_saved: f64,
+    pub monthly_saved: f64,
     pub active_sessions: usize,
     pub sparkline_data: Vec<u64>,
     pub sort_mode: SortMode,
@@ -50,7 +50,7 @@ impl App {
             weekly_tokens: 0,
             daily_cost: 0.0,
             monthly_cost: 0.0,
-            daily_saved: 0.0,
+            monthly_saved: 0.0,
             active_sessions: 0,
             sparkline_data: vec![0; 120], // Store some historical data points
             sort_mode: SortMode::Ctx,
@@ -66,18 +66,28 @@ impl App {
 
     pub fn refresh_data(&mut self) {
         self.sys.refresh_all();
-        self.sessions = scan_sessions(&mut self.cache, &mut self.sys);
+        let scan = scan_sessions(&mut self.cache, &mut self.sys);
+        self.sessions = scan.sessions;
 
         // Recompute totals
         self.weekly_cost = self.sessions.iter().map(|s| s.total_cost).sum();
-        self.monthly_cost = self.weekly_cost * 4.0; // simple mock for now
-        self.daily_cost = self.weekly_cost / 7.0;   // simple mock for now
-        self.daily_saved = self.sessions.iter().map(|s| s.saved_cost).sum(); // Assuming saved_cost is total over session, mock as daily for now
-        self.weekly_tokens = self.sessions.iter().map(|s| s.total_usage.total_output()).sum();
+        self.monthly_cost = scan.month.cost;
+        self.daily_cost = scan.today.cost;
+        self.monthly_saved = scan.month.saved;
+        self.weekly_tokens = self
+            .sessions
+            .iter()
+            .map(|s| s.total_usage.total_output())
+            .sum();
         self.active_sessions = self.sessions.iter().filter(|s| s.is_active).count();
 
         // Update sparkline
-        let current_total_ctx = self.sessions.iter().filter(|s| s.is_active).map(|s| s.total_usage.total_input_all()).sum();
+        let current_total_ctx = self
+            .sessions
+            .iter()
+            .filter(|s| s.is_active)
+            .map(|s| s.total_usage.total_input_all())
+            .sum();
         self.sparkline_data.push(current_total_ctx);
         if self.sparkline_data.len() > 120 {
             self.sparkline_data.remove(0);
@@ -96,7 +106,7 @@ impl App {
 
         self.last_refresh = Instant::now();
     }
-    
+
     pub fn apply_sorting(&mut self) {
         match self.sort_mode {
             SortMode::Cost => self.sort_by_cost(),
@@ -104,7 +114,7 @@ impl App {
             SortMode::Duration => self.sort_by_duration(),
         }
     }
-    
+
     pub fn toggle_sort(&mut self) {
         self.sort_mode = match self.sort_mode {
             SortMode::Ctx => SortMode::Cost,
@@ -157,13 +167,21 @@ impl App {
     }
 
     pub fn sort_by_ctx(&mut self) {
-        self.sessions.sort_by(|a, b| b.total_usage.total_input_all().cmp(&a.total_usage.total_input_all()));
+        self.sessions.sort_by(|a, b| {
+            b.total_usage
+                .total_input_all()
+                .cmp(&a.total_usage.total_input_all())
+        });
     }
-    
+
     pub fn sort_by_cost(&mut self) {
-        self.sessions.sort_by(|a, b| b.total_cost.partial_cmp(&a.total_cost).unwrap_or(std::cmp::Ordering::Equal));
+        self.sessions.sort_by(|a, b| {
+            b.total_cost
+                .partial_cmp(&a.total_cost)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
     }
-    
+
     pub fn sort_by_duration(&mut self) {
         self.sessions.sort_by(|a, b| {
             let dur_a = a.last_activity - a.first_activity;
@@ -186,7 +204,7 @@ impl App {
             if let Some(parent) = file.parent() {
                 if parent.file_name().and_then(|n| n.to_str()) == Some("subagents") {
                     let _ = fs::remove_dir(parent); // only removes if empty
-                    // Also try to remove the parent UUID dir
+                                                    // Also try to remove the parent UUID dir
                     if let Some(uuid_dir) = parent.parent() {
                         let _ = fs::remove_dir(uuid_dir);
                     }

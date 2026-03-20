@@ -9,7 +9,9 @@ use std::io;
 use clap::Parser;
 use crossterm::event::{KeyCode, KeyEventKind, KeyModifiers};
 use crossterm::execute;
-use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
+use crossterm::terminal::{
+    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
+};
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 
@@ -68,10 +70,7 @@ fn main() -> io::Result<()> {
     result
 }
 
-fn run_app(
-    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-    app: &mut App,
-) -> io::Result<()> {
+fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App) -> io::Result<()> {
     loop {
         terminal.draw(|frame| {
             ui::layout::render(frame, app);
@@ -93,8 +92,9 @@ fn run_app(
                     continue;
                 }
 
-                // Ctrl+C always quits
-                if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c')
+                // Ctrl+C / Ctrl+D always quits
+                if key.modifiers.contains(KeyModifiers::CONTROL)
+                    && matches!(key.code, KeyCode::Char('c') | KeyCode::Char('d'))
                 {
                     app.should_quit = true;
                     continue;
@@ -104,13 +104,13 @@ fn run_app(
                     AppMode::Normal => match key.code {
                         KeyCode::Up | KeyCode::Char('k') => app.move_up(),
                         KeyCode::Down | KeyCode::Char('j') => app.move_down(),
-                        KeyCode::Char('q') | KeyCode::Delete => app.request_delete(),
+                        KeyCode::Delete => app.request_delete(),
                         KeyCode::F(2) | KeyCode::Char('s') => app.toggle_sort(),
                         KeyCode::F(5) | KeyCode::Char('r') => app.refresh_data(),
                         _ => {}
                     },
                     AppMode::ConfirmDelete { .. } => match key.code {
-                        KeyCode::Char('y') | KeyCode::Char('Y') => app.confirm_delete(),
+                        KeyCode::Char('f') | KeyCode::Char('F') => app.confirm_delete(),
                         _ => app.cancel_delete(),
                     },
                 }

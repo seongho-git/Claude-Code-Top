@@ -114,8 +114,14 @@ fn parse_assistant_line(line: &str) -> Option<AssistantEntry> {
 
     let usage = message.get("usage")?;
     let token_usage = TokenUsage {
-        input_tokens: usage.get("input_tokens").and_then(|v| v.as_u64()).unwrap_or(0),
-        output_tokens: usage.get("output_tokens").and_then(|v| v.as_u64()).unwrap_or(0),
+        input_tokens: usage
+            .get("input_tokens")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0),
+        output_tokens: usage
+            .get("output_tokens")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0),
         cache_creation_input_tokens: usage
             .get("cache_creation_input_tokens")
             .and_then(|v| v.as_u64())
@@ -153,5 +159,8 @@ fn parse_assistant_line(line: &str) -> Option<AssistantEntry> {
 pub fn file_mtime(path: &Path) -> Option<DateTime<Utc>> {
     let mtime = fs::metadata(path).ok()?.modified().ok()?;
     let duration = mtime.duration_since(SystemTime::UNIX_EPOCH).ok()?;
-    Some(DateTime::from_timestamp(duration.as_secs() as i64, duration.subsec_nanos()).unwrap_or_default())
+    Some(
+        DateTime::from_timestamp(duration.as_secs() as i64, duration.subsec_nanos())
+            .unwrap_or_default(),
+    )
 }
