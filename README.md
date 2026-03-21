@@ -1,65 +1,198 @@
-# cctop (Claude Code Top)
+# cctop
 
-An htop-style terminal UI monitor for Claude Code sessions.
+```
+                 __
+      ___  ___  / /_  ____    ____
+     / __\/ __\/ __/ / __ \  / __ \
+    / /_ / /_ / /__ / /_/ / / /_/ /
+    \___/\___/\___/ \____/ / .___/
+                          /_/
+    Claude Code Top — htop for Claude Code
+```
 
-## Overview
+**An htop-style terminal monitor for Claude Code sessions.**
 
-`cctop` is a lightweight, interactive Terminal User Interface (TUI) application written in Rust designed to help you track, analyze, and manage your Claude Code AI sessions. It automatically scans your local Claude Code data directories (`~/.claude/projects/`) and provides real-time insights into your token usage, session costs, and active sessions.
+Track token usage, costs, session quotas, and active threads — all in real-time from your terminal.
 
-## Features
+![cctop screenshot](./cctop.png)
 
-- **Interactive TUI**: Navigate and manage your Claude Code sessions using an intuitive, `htop`-like interface (built with `ratatui`).
-- **Session Monitoring**: View all active and past sessions, sorted by recent activity.
-- **Cost & Token Tracking**: Parses Claude Code's internal JSONL logs to accurately calculate token usage and estimate costs over a weekly rolling window.
-- **Customizable Billing Plans**: Supports usage tracking against different API limits (`pro`, `max5`, `max20`).
-- **Session Management**: Easily delete unwanted sessions (including their `subagents` and metadata directories) directly from the terminal.
-- **Real-time Refresh**: Automatically polls for changes in active sessions.
+---
 
-## Tech Stack
+## Requirements
 
-- **Rust** (Edition 2021)
--  [Ratatui](https://github.com/ratatui-org/ratatui) & [Crossterm](https://github.com/crossterm-rs/crossterm) for terminal UI rendering and event handling.
--  [Clap](https://github.com/clap-rs/clap) for CLI argument parsing.
--  [Chrono](https://github.com/chronotope/chrono) for time calculations.
--  [Serde & Serde JSON](https://serde.rs/) for internal state and JSONL log parsing.
+- **Rust toolchain** (`cargo`) — see [Install Rust](#install-rust) below
+- **Claude Code** installed with local data at `~/.claude/`
 
-## Installation & Usage
+---
 
-Ensure you have Rust and Cargo installed.
+## Install Rust
+
+If you don't have Rust installed, run the official installer:
 
 ```bash
-# Build the project
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+
+Then reload your shell environment:
+
+```bash
+source "$HOME/.cargo/env"
+```
+
+Verify the installation:
+
+```bash
+cargo --version
+```
+
+> For more details, see the official guide at **https://rustup.rs/**
+
+---
+
+## Installation
+
+### Quick Install
+
+```bash
+git clone https://github.com/seongho-git/cctop.git
+cd cctop
+bash install.sh
+```
+
+The install script builds the binary, copies it to `~/.claude-code-top/`, and saves your plan selection to `~/.cctop.json`.
+
+### Manual Build
+
+```bash
 cargo build --release
-
-# Run cctop
-cargo run --release
+./target/release/cctop --plan max5
 ```
 
-You can also launch it with a specific plan directly:
+### Add to PATH
+
 ```bash
-cargo run -- --plan pro
+# zsh
+echo 'export PATH="$HOME/.claude-code-top:$PATH"' >> ~/.zshrc && source ~/.zshrc
+
+# bash
+echo 'export PATH="$HOME/.claude-code-top:$PATH"' >> ~/.bashrc && source ~/.bashrc
 ```
+
+---
+
+## Usage
+
+```bash
+cctop                    # Launch (uses saved plan)
+cctop --plan pro         # Set plan: pro, max5, max20
+cctop --update-usage     # Refresh quota data from Anthropic API
+```
+
+`--update-usage` first attempts a live fetch from the Anthropic OAuth API. If that fails (e.g. no credentials), it falls back to prompting you to paste the output of `/usage` from Claude Code.
 
 ### Keybindings
 
-- `Up` / `Down`: Navigate through sessions.
-- `q`: Request deletion of the currently highlighted session.
-- `y` / `Y`: Confirm deletion.
-- `Ctrl+C`: Quit the application.
+| Key | Action |
+|-----|--------|
+| `↑` / `k` | Select previous thread |
+| `↓` / `j` | Select next thread |
+| `←` / `h` | Sort by previous column |
+| `→` / `l` | Sort by next column |
+| `s` / `F2` | Cycle sort column forward |
+| `r` / `F5` | Force refresh |
+| `u` | Refresh server-side quota |
+| `d` / `Del` | Delete selected thread |
+| `q` / `Ctrl+C` | Quit |
 
-## Architecture
+---
 
-- `src/main.rs`: Entry point and CLI parsing.
-- `src/app.rs`: Core application state and event loop logic.
-- `src/ui/`: Ratatui layout, themes, and rendering logic.
-- `src/data/`: Data models, JSONL parsing, pricing logic, and session discovery from `~/.claude/projects/`.
+## What It Shows
+
+### Header — Usage Bars
+
+Three single-line progress bars showing real-time quota consumption:
+
+- **Session** — 5-hour rolling token window
+- **Weekly** — 7-day spending limit
+- **Extra** — OAuth-based extra usage tier
+
+Data is fetched from Anthropic's OAuth API using credentials stored in `~/.claude/.credentials.json`. Refreshes every 60 seconds while threads are active, every 5 minutes otherwise.
+
+The layout degrades gracefully as the terminal shrinks: the recent commands panel hides first, then the detail panel, then the thread list compresses.
+
+### Thread List
+
+| Column | Description |
+|--------|-------------|
+| PID | Process ID (if Claude is actively running) |
+| DIRECTORY | Shortened path: `/first/../parent/folder` |
+| PROJECT | First 2 words of last user message + session ID |
+| STATUS | `● running` / `⏸ waiting` / `○ idle` / `✕ error` |
+| MODEL | Active model (e.g. `opus-4-6`, `sonnet-4-6`) |
+| EFFORT | Inferred effort level: Low / Auto / High / Max |
+| CTX | Context tokens used vs. model maximum |
+| CACHE | Cache hit rate |
+| COST | Estimated total API cost |
+| DURATION | Session duration |
+
+Columns auto-hide from right to left as the terminal narrows, prioritizing the PROJECT column content. A recent commands panel appears above the detail panel when enough vertical space is available.
+
+### Detail Panel
+
+Split into two halves at the bottom of the screen:
+
+**Thread Details (left)**
+- PID, project name, and active status
+- Model (shortened), effort level, session duration, burn rate
+- Token breakdown: input / output counts
+- Cost with cache hit rate and savings estimate
+- Messages remaining in the current 5-hour session window
+- Model Mix: tier distribution bar + one-line percentage breakdown (Opus / Sonnet / Haiku)
+
+**Thread & Usage (right)**
+- Full project path, first and last activity timestamps
+- All-time totals: token count and cost aggregated by model tier
+- Recent Commands: last 3 user messages sent in the session
+
+---
+
+## How It Works
+
+1. **Process Detection** — Scans running processes for `claude` executables via `sysinfo`, matches each process's CWD to a project directory under `~/.claude/projects/`
+2. **JSONL Parsing** — Reads conversation logs at `~/.claude/projects/<encoded-path>/*.jsonl` with mtime-based caching to avoid redundant I/O
+3. **Cost Calculation** — Applies per-model pricing (Opus / Sonnet / Haiku) including cache read/write rates to compute accurate cost and savings estimates
+4. **OAuth Quota** — Fetches live session, weekly, and extra usage from `api.anthropic.com/api/oauth/usage` using the OAuth token stored by Claude Code
+5. **2s Refresh Cycle** — Lightweight polling: only process metadata is refreshed each cycle; JSONL files are re-parsed only when their mtime changes
+
+---
+
+## Plans
+
+| Plan | 5h Token Limit | Weekly Cost Limit |
+|------|---------------:|------------------:|
+| Pro | 19,000 | $18 |
+| Max5 | 88,000 | $35 |
+| Max20 | 220,000 | $140 |
+
+Token limits shown are approximate and reflect the rolling 5-hour session window used by Claude Code.
+
+---
+
+## References
+
+- [claude-code-usage-monitor](https://github.com/Maciej-Gutkowski/claude-code-usage-monitor) — Python TUI that inspired the session model and JSONL parsing approach
+- [ccusage](https://github.com/ryoppippi/ccusage) — Source for the Anthropic OAuth usage API endpoint
+- [Ratatui](https://ratatui.rs/) — Rust terminal UI framework
+- [Anthropic API Pricing](https://docs.anthropic.com/en/docs/about-claude/models) — Model pricing reference
+
+---
 
 ## License
 
-MIT License
+MIT
 
-## Developer
+## Author
 
-- **Name**: Seongho Kim (Yonsei University)
-- **Email**: [seongho-kim@yonsei.ac.kr](mailto:seongho-kim@yonsei.ac.kr)
-- **GitHub**: [@seongho-git](https://github.com/seongho-git)
+**Seongho Kim** — Yonsei University
+- [seongho-kim@yonsei.ac.kr](mailto:seongho-kim@yonsei.ac.kr)
+- [@seongho-git](https://github.com/seongho-git)

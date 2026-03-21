@@ -1,4 +1,5 @@
 use chrono::{DateTime, Utc};
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -6,7 +7,7 @@ pub enum PlanType {
     Pro,
     Max5,
     Max20,
-    Custom(u64), // Contains custom token limit
+    Custom(u64),
 }
 
 impl PlanType {
@@ -24,7 +25,7 @@ impl PlanType {
             PlanType::Pro => 18.0,
             PlanType::Max5 => 35.0,
             PlanType::Max20 => 140.0,
-            PlanType::Custom(l) => (*l as f64) / 1000.0, // rough custom cost limit
+            PlanType::Custom(l) => (*l as f64) / 1000.0,
         }
     }
 
@@ -116,7 +117,7 @@ pub struct AssistantEntry {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum SessionStatus {
+pub enum ThreadStatus {
     Running,
     Waiting,
     Idle,
@@ -124,20 +125,38 @@ pub enum SessionStatus {
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
-pub struct Session {
+pub struct Thread {
     pub pid: Option<u32>,
-    pub status: SessionStatus,
+    pub status: ThreadStatus,
     pub project_path: String,
     pub folder_name: String,
+    pub session_file: String,
     pub total_usage: TokenUsage,
     pub total_cost: f64,
     pub saved_cost: f64,
     pub last_model: String,
-    pub has_thinking: bool,
     pub first_activity: DateTime<Utc>,
     pub last_activity: DateTime<Utc>,
     pub is_active: bool,
-    pub burn_rate: f64, // tokens per minute
+    pub burn_rate: f64,
     pub jsonl_files: Vec<PathBuf>,
+    pub window_5h_usage: TokenUsage,
+    pub window_5h_start: Option<DateTime<Utc>>,
+    pub window_5h_message_count: u64,
+    pub weekly_cost: f64,
+    pub per_model_usage: HashMap<String, TokenUsage>,
+    pub recent_commands: Vec<String>,
+    pub last_ctx_used: u64,
+    /// Effort level: "max", "high", "auto", "low" — from /effort command or inferred
+    pub last_effort: String,
+}
+
+/// Return the maximum context window size for a given model.
+pub fn context_max(model: &str) -> u64 {
+    let lower = model.to_lowercase();
+    if lower.contains("opus") {
+        1_000_000
+    } else {
+        200_000
+    }
 }

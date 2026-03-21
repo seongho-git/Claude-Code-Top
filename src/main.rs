@@ -9,25 +9,38 @@ use std::io;
 use clap::Parser;
 use crossterm::event::{KeyCode, KeyEventKind, KeyModifiers};
 use crossterm::execute;
-use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
+use crossterm::terminal::{
+    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
+};
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 
 use app::{App, AppMode};
 use config::{load_plan, prompt_plan_selection, save_plan};
 use data::types::PlanType;
+use data::usage::update_usage_interactive;
 use event::{poll_event, AppEvent};
 
 #[derive(Parser)]
-#[command(name = "cctop", about = "htop-style Claude Code session monitor")]
+#[command(name = "cctop", about = "htop-style Claude Code thread monitor")]
 struct Cli {
     /// Plan type: pro, max5, max20
     #[arg(long)]
     plan: Option<String>,
+
+    /// Update usage data interactively (paste /usage output)
+    #[arg(long)]
+    update_usage: bool,
 }
 
 fn main() -> io::Result<()> {
     let cli = Cli::parse();
+
+    // Handle --update-usage subcommand
+    if cli.update_usage {
+        update_usage_interactive();
+        return Ok(());
+    }
 
     // Resolve plan: CLI arg → saved config → interactive prompt
     let plan = if let Some(plan_str) = &cli.plan {
@@ -88,13 +101,13 @@ fn run_app(
 
         match poll_event(timeout) {
             Some(AppEvent::Key(key)) => {
-                // Only handle key press events (not release/repeat)
                 if key.kind != KeyEventKind::Press {
                     continue;
                 }
 
-                // Ctrl+C always quits
-                if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c')
+                // Ctrl+C and Ctrl+D always quit
+                if key.modifiers.contains(KeyModifiers::CONTROL)
+                    && (key.code == KeyCode::Char('c') || key.code == KeyCode::Char('d'))
                 {
                     app.should_quit = true;
                     continue;
@@ -104,13 +117,19 @@ fn run_app(
                     AppMode::Normal => match key.code {
                         KeyCode::Up | KeyCode::Char('k') => app.move_up(),
                         KeyCode::Down | KeyCode::Char('j') => app.move_down(),
-                        KeyCode::Char('q') | KeyCode::Delete => app.request_delete(),
+                        KeyCode::Left | KeyCode::Char('h') => app.sort_prev(),
+                        KeyCode::Right | KeyCode::Char('l') => app.sort_next(),
+                        KeyCode::Char('q') => {
+                            app.should_quit = true;
+                        }
+                        KeyCode::Char('d') | KeyCode::Delete => app.request_delete(),
                         KeyCode::F(2) | KeyCode::Char('s') => app.toggle_sort(),
                         KeyCode::F(5) | KeyCode::Char('r') => app.refresh_data(),
+                        KeyCode::Char('u') => app.force_refresh_usage(),
                         _ => {}
                     },
                     AppMode::ConfirmDelete { .. } => match key.code {
-                        KeyCode::Char('y') | KeyCode::Char('Y') => app.confirm_delete(),
+                        KeyCode::Enter => app.confirm_delete(),
                         _ => app.cancel_delete(),
                     },
                 }
