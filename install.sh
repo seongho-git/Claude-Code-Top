@@ -8,6 +8,18 @@
 
 set -e
 
+echo "Checking dependencies..."
+
+if ! command -v claude &> /dev/null; then
+    echo "Error: Claude Code not found."
+    echo ""
+    echo "Install Claude Code with:"
+    echo "  curl -fsSL https://claude.ai/install.sh | bash"
+    echo ""
+    echo "Then re-run this script."
+    exit 1
+fi
+
 if ! command -v cargo &> /dev/null; then
     if [ -f "$HOME/.cargo/env" ]; then
         source "$HOME/.cargo/env"
@@ -21,6 +33,17 @@ if ! command -v cargo &> /dev/null; then
         echo "  source \"\$HOME/.cargo/env\""
         exit 1
     fi
+fi
+
+if ! command -v tmux &> /dev/null; then
+    echo "Error: tmux not found (required for background usage tracking)."
+    echo ""
+    echo "Install tmux with:"
+    echo "  macOS:  brew install tmux"
+    echo "  Ubuntu: sudo apt install tmux"
+    echo ""
+    echo "Then re-run this script."
+    exit 1
 fi
 
 echo "Building cctop..."
