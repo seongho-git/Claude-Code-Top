@@ -1,16 +1,14 @@
-# cctop
-
 ```
                  __
       ___  ___  / /_  ____    ____
      / __\/ __\/ __/ / __ \  / __ \
     / /_ / /_ / /__ / /_/ / / /_/ /
-    \___/\___/\___/ \____/ / .___/
+    \___/\___/\___/ \____/ /  ___/
                           /_/
-    Claude Code Top — htop for Claude Code
+    cctop: Claude Code Top
 ```
 
-**An htop-style terminal monitor for Claude Code sessions.**
+**A top-style CLI terminal monitor for Claude Code sessions.**
 
 Track token usage, costs, session quotas, and active threads — all in real-time from your terminal.
 
@@ -22,6 +20,12 @@ Track token usage, costs, session quotas, and active threads — all in real-tim
 
 - **Rust toolchain** (`cargo`) — see [Install Rust](#install-rust) below
 - **Claude Code** installed with local data at `~/.claude/`
+
+| OS | Support Status |
+|:---:|:---|
+| **Ubuntu** | ✅ Supported |
+| **macOS** | 🚧 In development |
+| **Windows**| 🚧 In development |
 
 ---
 
@@ -54,9 +58,9 @@ cargo --version
 ### Quick Install
 
 ```bash
-git clone https://github.com/seongho-git/cctop.git
-cd cctop
-bash install.sh
+git clone [https://github.com/seongho-git/Claude-Code-Top.git](https://github.com/seongho-git/Claude-Code-Top.git)
+cd Claude-Code-Top
+source install.sh
 ```
 
 The install script builds the binary, copies it to `~/.claude-code-top/`, and saves your plan selection to `~/.cctop.json`.
@@ -163,18 +167,6 @@ Split into two halves at the bottom of the screen:
 3. **Cost Calculation** — Applies per-model pricing (Opus / Sonnet / Haiku) including cache read/write rates to compute accurate cost and savings estimates
 4. **OAuth Quota** — Fetches live session, weekly, and extra usage from `api.anthropic.com/api/oauth/usage` using the OAuth token stored by Claude Code
 5. **2s Refresh Cycle** — Lightweight polling: only process metadata is refreshed each cycle; JSONL files are re-parsed only when their mtime changes
-
----
-
-## Plans
-
-| Plan | 5h Token Limit | Weekly Cost Limit |
-|------|---------------:|------------------:|
-| Pro | 19,000 | $18 |
-| Max5 | 88,000 | $35 |
-| Max20 | 220,000 | $140 |
-
-Token limits shown are approximate and reflect the rolling 5-hour session window used by Claude Code.
 
 ---
 
