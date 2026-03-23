@@ -4,7 +4,9 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::Frame;
 
-use super::theme::{BG_BORDER, BLUE, GREEN, ORANGE, RED, TEXT_DIM, TEXT_HIGHLIGHT, TEXT_IDLE, YELLOW};
+use super::theme::{
+    BG_BORDER, BLUE, GREEN, ORANGE, RED, TEXT_DIM, TEXT_HIGHLIGHT, TEXT_IDLE, YELLOW,
+};
 use super::{effort_display, format_tokens, shorten_model};
 use crate::app::App;
 use crate::data::types::Thread;
@@ -37,11 +39,7 @@ pub fn render_details(
 fn render_left_panel(frame: &mut Frame, area: Rect, s: &Thread, app: &App) {
     let mut lines = vec![];
 
-    let display_name = s
-        .project_path
-        .rsplit('/')
-        .next()
-        .unwrap_or(&s.project_path);
+    let display_name = s.project_path.rsplit('/').next().unwrap_or(&s.project_path);
     let status_type = if s.is_active { "local" } else { "offline" };
     let pid_str = s.pid.map_or("-".to_string(), |p| p.to_string());
 
@@ -66,7 +64,10 @@ fn render_left_panel(frame: &mut Frame, area: Rect, s: &Thread, app: &App) {
     };
     lines.push(Line::from(vec![
         Span::styled(format!(" {:<10}", "Model:"), Style::default().fg(TEXT_DIM)),
-        Span::styled(format!("{:<12}", model_short), Style::default().fg(TEXT_HIGHLIGHT)),
+        Span::styled(
+            format!("{:<12}", model_short),
+            Style::default().fg(TEXT_HIGHLIGHT),
+        ),
         Span::styled("Effort: ", Style::default().fg(TEXT_DIM)),
         Span::styled(
             effort_str,
@@ -81,7 +82,10 @@ fn render_left_panel(frame: &mut Frame, area: Rect, s: &Thread, app: &App) {
     let hours = duration_secs / 3600;
     let mins = (duration_secs % 3600) / 60;
     lines.push(Line::from(vec![
-        Span::styled(format!(" {:<10}", "Duration:"), Style::default().fg(TEXT_DIM)),
+        Span::styled(
+            format!(" {:<10}", "Duration:"),
+            Style::default().fg(TEXT_DIM),
+        ),
         Span::styled(
             format!("{:<12}", format!("{:02}:{:02}h", hours, mins)),
             Style::default().fg(TEXT_HIGHLIGHT),
@@ -109,7 +113,10 @@ fn render_left_panel(frame: &mut Frame, area: Rect, s: &Thread, app: &App) {
     lines.push(Line::from(vec![
         Span::styled(format!(" {:<10}", "Tokens:"), Style::default().fg(TEXT_DIM)),
         Span::styled(
-            format!("{:<12}", format!("in {:>7}", format_tokens(usage.input_tokens))),
+            format!(
+                "{:<12}",
+                format!("in {:>7}", format_tokens(usage.input_tokens))
+            ),
             Style::default().fg(TEXT_IDLE),
         ),
         Span::styled(
@@ -175,10 +182,7 @@ fn render_left_panel(frame: &mut Frame, area: Rect, s: &Thread, app: &App) {
     let left_block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(BG_BORDER))
-        .title(Span::styled(
-            " Thread Details",
-            Style::default().fg(BLUE),
-        ));
+        .title(Span::styled(" Thread Details", Style::default().fg(BLUE)));
     frame.render_widget(Paragraph::new(lines).block(left_block), area);
 }
 
@@ -188,8 +192,10 @@ fn render_right_panel(frame: &mut Frame, area: Rect, s: &Thread, app: &App) {
 
     // Project path (truncated if long)
     let path_display = if s.project_path.len() > (area.width as usize).saturating_sub(9) {
-        let truncated = &s.project_path
-            [s.project_path.len().saturating_sub((area.width as usize).saturating_sub(12))..];
+        let truncated = &s.project_path[s
+            .project_path
+            .len()
+            .saturating_sub((area.width as usize).saturating_sub(12))..];
         format!("\u{2026}{}", truncated)
     } else {
         s.project_path.clone()
@@ -216,7 +222,10 @@ fn render_right_panel(frame: &mut Frame, area: Rect, s: &Thread, app: &App) {
         let tm_l = tm_dash / 2;
         let tm_r = tm_dash - tm_l;
         lines.push(Line::from(vec![
-            Span::styled(format!(" {}", "\u{2500}".repeat(tm_l)), Style::default().fg(TEXT_DIM)),
+            Span::styled(
+                format!(" {}", "\u{2500}".repeat(tm_l)),
+                Style::default().fg(TEXT_DIM),
+            ),
             Span::styled(tm_label, Style::default().fg(TEXT_HIGHLIGHT)),
             Span::styled("\u{2500}".repeat(tm_r), Style::default().fg(TEXT_DIM)),
         ]));
@@ -247,7 +256,11 @@ fn render_right_panel(frame: &mut Frame, area: Rect, s: &Thread, app: &App) {
         let mut bar_spans = vec![Span::styled("  [", Style::default().fg(TEXT_DIM))];
         let mut chars_used = 0;
         for (idx, (tokens, color)) in tier_list.iter().enumerate() {
-            let pct_f = if total_toks > 0 { *tokens as f64 / total_toks as f64 } else { 0.0 };
+            let pct_f = if total_toks > 0 {
+                *tokens as f64 / total_toks as f64
+            } else {
+                0.0
+            };
             let chars = if idx == tier_list.len() - 1 {
                 bar_w.saturating_sub(chars_used)
             } else {
@@ -255,7 +268,10 @@ fn render_right_panel(frame: &mut Frame, area: Rect, s: &Thread, app: &App) {
             };
             chars_used += chars;
             if chars > 0 {
-                bar_spans.push(Span::styled("\u{2588}".repeat(chars), Style::default().fg(*color)));
+                bar_spans.push(Span::styled(
+                    "\u{2588}".repeat(chars),
+                    Style::default().fg(*color),
+                ));
             }
         }
         bar_spans.push(Span::styled("]", Style::default().fg(TEXT_DIM)));
@@ -263,12 +279,25 @@ fn render_right_panel(frame: &mut Frame, area: Rect, s: &Thread, app: &App) {
 
         // Tier percentages
         let pct = |t: u64| -> u64 {
-            if total_toks > 0 { (t as f64 / total_toks as f64 * 100.0).round() as u64 } else { 0 }
+            if total_toks > 0 {
+                (t as f64 / total_toks as f64 * 100.0).round() as u64
+            } else {
+                0
+            }
         };
         lines.push(Line::from(vec![
-            Span::styled(format!("  opus {:>3}%", pct(opus_t)), Style::default().fg(ORANGE)),
-            Span::styled(format!("  sonnet {:>3}%", pct(sonnet_t)), Style::default().fg(BLUE)),
-            Span::styled(format!("  haiku {:>3}%", pct(haiku_t)), Style::default().fg(GREEN)),
+            Span::styled(
+                format!("  opus {:>3}%", pct(opus_t)),
+                Style::default().fg(ORANGE),
+            ),
+            Span::styled(
+                format!("  sonnet {:>3}%", pct(sonnet_t)),
+                Style::default().fg(BLUE),
+            ),
+            Span::styled(
+                format!("  haiku {:>3}%", pct(haiku_t)),
+                Style::default().fg(GREEN),
+            ),
         ]));
     }
 
@@ -279,7 +308,10 @@ fn render_right_panel(frame: &mut Frame, area: Rect, s: &Thread, app: &App) {
         let at_l = at_dash / 2;
         let at_r = at_dash - at_l;
         lines.push(Line::from(vec![
-            Span::styled(format!(" {}", "\u{2500}".repeat(at_l)), Style::default().fg(TEXT_DIM)),
+            Span::styled(
+                format!(" {}", "\u{2500}".repeat(at_l)),
+                Style::default().fg(TEXT_DIM),
+            ),
             Span::styled(at_label, Style::default().fg(TEXT_HIGHLIGHT)),
             Span::styled("\u{2500}".repeat(at_r), Style::default().fg(TEXT_DIM)),
         ]));
@@ -288,34 +320,60 @@ fn render_right_panel(frame: &mut Frame, area: Rect, s: &Thread, app: &App) {
         let mut tier_data: [(u64, f64); 3] = [(0, 0.0); 3];
         for (model_name, tokens, cost) in app.lifetime_by_model.iter() {
             let lower = model_name.to_lowercase();
-            let idx = if lower.contains("opus") { 0 } else if lower.contains("haiku") { 2 } else { 1 };
+            let idx = if lower.contains("opus") {
+                0
+            } else if lower.contains("haiku") {
+                2
+            } else {
+                1
+            };
             tier_data[idx].0 += tokens;
             tier_data[idx].1 += cost;
         }
 
         // Line 1: Total + opus
         lines.push(Line::from(vec![
-            Span::styled(format!(" Total {:>6}", format_tokens(app.total_tokens_all)), Style::default().fg(TEXT_HIGHLIGHT)),
-            Span::styled(format!(" ${:<6.2}", app.total_cost_all), Style::default().fg(ORANGE)),
-            Span::styled(format!(" opus {:>6}", format_tokens(tier_data[0].0)), Style::default().fg(tier_colors[0])),
-            Span::styled(format!(" ${:.2}", tier_data[0].1), Style::default().fg(ORANGE)),
+            Span::styled(
+                format!(" Total {:>6}", format_tokens(app.total_tokens_all)),
+                Style::default().fg(TEXT_HIGHLIGHT),
+            ),
+            Span::styled(
+                format!(" ${:<6.2}", app.total_cost_all),
+                Style::default().fg(ORANGE),
+            ),
+            Span::styled(
+                format!(" opus {:>6}", format_tokens(tier_data[0].0)),
+                Style::default().fg(tier_colors[0]),
+            ),
+            Span::styled(
+                format!(" ${:.2}", tier_data[0].1),
+                Style::default().fg(ORANGE),
+            ),
         ]));
         // Line 2: sonnet + haiku
         lines.push(Line::from(vec![
-            Span::styled(format!(" sonnet {:>5}", format_tokens(tier_data[1].0)), Style::default().fg(tier_colors[1])),
-            Span::styled(format!(" ${:<6.2}", tier_data[1].1), Style::default().fg(ORANGE)),
-            Span::styled(format!(" haiku {:>5}", format_tokens(tier_data[2].0)), Style::default().fg(tier_colors[2])),
-            Span::styled(format!(" ${:.2}", tier_data[2].1), Style::default().fg(ORANGE)),
+            Span::styled(
+                format!(" sonnet {:>5}", format_tokens(tier_data[1].0)),
+                Style::default().fg(tier_colors[1]),
+            ),
+            Span::styled(
+                format!(" ${:<6.2}", tier_data[1].1),
+                Style::default().fg(ORANGE),
+            ),
+            Span::styled(
+                format!(" haiku {:>5}", format_tokens(tier_data[2].0)),
+                Style::default().fg(tier_colors[2]),
+            ),
+            Span::styled(
+                format!(" ${:.2}", tier_data[2].1),
+                Style::default().fg(ORANGE),
+            ),
         ]));
     }
 
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(BG_BORDER))
-        .title(Span::styled(
-            " Thread & Usage",
-            Style::default().fg(BLUE),
-        ));
+        .title(Span::styled(" Thread & Usage", Style::default().fg(BLUE)));
     frame.render_widget(Paragraph::new(lines).block(block), area);
 }
-

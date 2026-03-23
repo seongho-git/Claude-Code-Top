@@ -10,6 +10,9 @@ set -e
 
 echo "Checking dependencies..."
 
+BIN_PATH="$HOME/.claude-code-top"
+BUILD_DIR="$BIN_PATH/target"
+
 if ! command -v claude &> /dev/null; then
     echo "Error: Claude Code not found."
     echo ""
@@ -47,10 +50,9 @@ if ! command -v tmux &> /dev/null; then
 fi
 
 echo "Building cctop..."
-cargo build --release
+CARGO_TARGET_DIR="$BUILD_DIR" cargo build --release
 
-BIN_PATH="$HOME/.claude-code-top"
-EXECUTABLE="target/release/cctop"
+EXECUTABLE="$BUILD_DIR/release/cctop"
 
 echo "Checking $BIN_PATH directory..."
 if [ ! -d "$BIN_PATH" ]; then
@@ -60,6 +62,9 @@ fi
 
 echo "Installing binary to $BIN_PATH/cctop..."
 install -m 755 "$EXECUTABLE" "$BIN_PATH/cctop"
+
+echo "Installing update.sh to $BIN_PATH/update.sh..."
+install -m 755 "update.sh" "$BIN_PATH/update.sh"
 
 # Plan selection
 echo ""
@@ -79,8 +84,8 @@ case "$plan_choice" in
     *) plan="max5" ;;
 esac
 
-echo "{\"plan\": \"$plan\"}" > "$HOME/.cctop.json"
-echo "  → Plan '$plan' saved to ~/.cctop.json"
+echo "{\"plan\": \"$plan\"}" > "$BIN_PATH/config.json"
+echo "  → Plan '$plan' saved to ~/.claude-code-top/config.json"
 
 echo ""
 echo "========================================"

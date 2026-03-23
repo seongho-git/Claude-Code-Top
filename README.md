@@ -84,7 +84,7 @@ cd Claude-Code-Top
 source install.sh
 ```
 
-The install script builds the binary, copies it to `~/.claude-code-top/`, and saves your plan selection to `~/.cctop.json`.
+The install script builds into `~/.claude-code-top/target/`, copies the binary to `~/.claude-code-top/`, and saves your plan selection to `~/.claude-code-top/config.json`.
 
 ### Manual Build
 
@@ -113,7 +113,11 @@ cctop --plan pro         # Set plan: pro, max5, max20
 cctop --update-usage     # Refresh quota data from Anthropic API
 ```
 
-`--update-usage` first attempts a live fetch from the Anthropic OAuth API. If that fails (e.g. no credentials), it automatically falls back to running `update.sh` in the background (using tmux) to safely scrape the `/usage` output. If this script is unavailable, it falls back to prompting you to paste the text manually.
+`--update-usage` first attempts a live fetch from the Anthropic OAuth API. If `~/.claude/.credentials.json` exists and the API call succeeds, no tmux background run or fallback is used. If the API errors, `cctop` falls back to running `update.sh` in the background (using tmux) to safely scrape the `/usage` output, and only then falls back to prompting you to paste the text manually.
+
+The tmux fallback runs Claude Code in the current working directory. If Claude shows the trust confirmation for that folder, `update.sh` automatically confirms the default "Yes, I trust this folder" option and continues to `/usage`.
+
+On macOS, the tmux fallback can take a few more seconds because Claude Code has to launch in the background and wait for `/usage` to finish rendering.
 
 ### Keybindings
 
@@ -142,6 +146,16 @@ Three single-line progress bars showing real-time quota consumption:
 - **Extra** — OAuth-based extra usage tier
 
 Data is fetched from Anthropic's OAuth API using credentials stored in `~/.claude/.credentials.json`. Refreshes every 60 seconds while threads are active, every 5 minutes otherwise.
+
+All files created by `cctop` are stored under `~/.claude-code-top/`, including:
+- `cctop`
+- `update.sh`
+- `config.json`
+- `usage.json`
+- `usage_raw.txt`
+- `usage_parsed.json`
+
+Removing `~/.claude-code-top/` cleans up the files managed by `cctop` in one place.
 
 The layout degrades gracefully as the terminal shrinks: the recent commands panel hides first, then the detail panel, then the thread list compresses.
 
@@ -186,7 +200,7 @@ Split into two halves at the bottom of the screen:
 1. **Process Detection** — Scans running processes for `claude` executables via `sysinfo`, matches each process's CWD to a project directory under `~/.claude/projects/`
 2. **JSONL Parsing** — Reads conversation logs at `~/.claude/projects/<encoded-path>/*.jsonl` with mtime-based caching to avoid redundant I/O
 3. **Cost Calculation** — Applies per-model pricing (Opus / Sonnet / Haiku) including cache read/write rates to compute accurate cost and savings estimates
-4. **OAuth Quota** — Fetches live session, weekly, and extra usage from `api.anthropic.com/api/oauth/usage` using the OAuth token stored by Claude Code. If the API fetch fails, a fallback script (`update.sh`) runs Claude Code automatically in the background via `tmux` to parse the `/usage` info.
+4. **OAuth Quota** — Fetches live session, weekly, and extra usage from `api.anthropic.com/api/oauth/usage` using the OAuth token stored by Claude Code. If `~/.claude/.credentials.json` exists, `cctop` tries the API first and only falls back to tmux when the API errors. If the credentials file does not exist, it goes straight to the tmux script. The tmux fallback launches Claude Code in the current working directory and auto-confirms the default trust prompt if Claude asks for it.
 5. **2s Refresh Cycle** — Lightweight polling: only process metadata is refreshed each cycle; JSONL files are re-parsed only when their mtime changes
 
 ---

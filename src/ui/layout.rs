@@ -9,27 +9,23 @@ use chrono::Local;
 use super::confirm::render_confirm_dialog;
 use super::details::render_details;
 use super::header::render_header;
+use super::theme::{
+    BG_BORDER, BG_MAIN, BG_STATUS, BLUE, CLAUDE_ORANGE, GREEN, RED, TEXT_DIM, TEXT_HIGHLIGHT,
+    TEXT_IDLE, YELLOW,
+};
 use super::threads::render_threads;
-use super::theme::{BG_BORDER, BG_MAIN, BG_STATUS, BLUE, CLAUDE_ORANGE, GREEN, RED, TEXT_DIM, TEXT_HIGHLIGHT, TEXT_IDLE, YELLOW};
 use crate::app::{App, AppMode};
 use crate::data::types::Thread;
 
 pub fn render(frame: &mut Frame, app: &App) {
     let size = frame.area();
 
-    frame.render_widget(
-        Block::default().style(Style::default().bg(BG_MAIN)),
-        size,
-    );
+    frame.render_widget(Block::default().style(Style::default().bg(BG_MAIN)), size);
 
     // Build title with plan on left and current time on right
     let now_dt = Local::now();
     let tz_abbr = now_dt.format("%Z").to_string();
-    let now = format!(
-        "{} ({}) ",
-        now_dt.format("%a %d %b %Y  %H:%M"),
-        tz_abbr,
-    );
+    let now = format!("{} ({}) ", now_dt.format("%a %d %b %Y  %H:%M"), tz_abbr,);
     let left_title = format!(" Claude-Code-Top  [{}]", app.plan.label());
     let right_title = now;
     let available_width = (size.width as usize).saturating_sub(4);
@@ -39,10 +35,7 @@ pub fn render(frame: &mut Frame, app: &App) {
     let outer_block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(CLAUDE_ORANGE))
-        .title(Span::styled(
-            full_title,
-            Style::default().fg(CLAUDE_ORANGE),
-        ));
+        .title(Span::styled(full_title, Style::default().fg(CLAUDE_ORANGE)));
     let inner = outer_block.inner(size);
     frame.render_widget(outer_block, size);
 
@@ -138,10 +131,7 @@ pub fn render(frame: &mut Frame, app: &App) {
 
     // LOCAL THREADS label
     let local_header = Paragraph::new(Line::from(vec![
-        Span::styled(
-            " LOCAL THREADS ",
-            Style::default().fg(BLUE).bg(BG_BORDER),
-        ),
+        Span::styled(" LOCAL THREADS ", Style::default().fg(BLUE).bg(BG_BORDER)),
         Span::styled(
             format!("  {} active ", app.active_threads),
             Style::default().fg(GREEN),
@@ -176,13 +166,7 @@ pub fn render(frame: &mut Frame, app: &App) {
             .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
             .split(chunks[ci]);
 
-        render_details(
-            frame,
-            detail_cols[0],
-            detail_cols[1],
-            selected_thread,
-            app,
-        );
+        render_details(frame, detail_cols[0], detail_cols[1], selected_thread, app);
         ci += 1;
     }
 
@@ -237,7 +221,12 @@ fn render_messages(frame: &mut Frame, area: ratatui::layout::Rect, thread: &Thre
     let max_w = (area.width as usize).saturating_sub(4);
     let avail_lines = area.height as usize;
 
-    let msgs: Vec<&String> = thread.recent_commands.iter().rev().take(avail_lines).collect();
+    let msgs: Vec<&String> = thread
+        .recent_commands
+        .iter()
+        .rev()
+        .take(avail_lines)
+        .collect();
     let mut lines = Vec::new();
 
     for (i, msg) in msgs.iter().rev().enumerate() {

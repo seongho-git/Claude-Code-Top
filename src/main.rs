@@ -2,6 +2,7 @@ mod app;
 mod config;
 mod data;
 mod event;
+mod paths;
 mod ui;
 
 use std::io;
@@ -81,10 +82,7 @@ fn main() -> io::Result<()> {
     result
 }
 
-fn run_app(
-    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-    app: &mut App,
-) -> io::Result<()> {
+fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App) -> io::Result<()> {
     loop {
         terminal.draw(|frame| {
             ui::layout::render(frame, app);

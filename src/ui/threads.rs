@@ -50,9 +50,26 @@ pub fn render_threads(
     let show_model = w >= base + status_w + 1 + model_w + 1;
     let show_effort = w >= base + status_w + 1 + model_w + 1 + effort_w + 1;
     let show_ctx = w >= base + status_w + 1 + model_w + 1 + effort_w + 1 + ctx_w + 1;
-    let show_cache = w >= base + status_w + 1 + model_w + 1 + effort_w + 1 + ctx_w + 1 + cache_w + 1;
-    let show_cost = w >= base + status_w + 1 + model_w + 1 + effort_w + 1 + ctx_w + 1 + cache_w + 1 + cost_w + 1;
-    let show_duration = w >= base + status_w + 1 + model_w + 1 + effort_w + 1 + ctx_w + 1 + cache_w + 1 + cost_w + 1 + duration_w + 1;
+    let show_cache =
+        w >= base + status_w + 1 + model_w + 1 + effort_w + 1 + ctx_w + 1 + cache_w + 1;
+    let show_cost = w
+        >= base + status_w + 1 + model_w + 1 + effort_w + 1 + ctx_w + 1 + cache_w + 1 + cost_w + 1;
+    let show_duration = w
+        >= base
+            + status_w
+            + 1
+            + model_w
+            + 1
+            + effort_w
+            + 1
+            + ctx_w
+            + 1
+            + cache_w
+            + 1
+            + cost_w
+            + 1
+            + duration_w
+            + 1;
 
     // Calculate fixed width used by visible columns
     let mut fixed: u16 = pid_w + 1;
@@ -105,35 +122,50 @@ pub fn render_threads(
         widths.push(Constraint::Length(dir_w));
     }
 
-    header_cells.push(Cell::from(center("PROJECT", project_w as usize)).style(col_style(SortColumn::Project)));
+    header_cells.push(
+        Cell::from(center("PROJECT", project_w as usize)).style(col_style(SortColumn::Project)),
+    );
     widths.push(Constraint::Length(project_w));
 
     if show_status {
-        header_cells.push(Cell::from(center("STATUS", status_w as usize)).style(col_style(SortColumn::Status)));
+        header_cells.push(
+            Cell::from(center("STATUS", status_w as usize)).style(col_style(SortColumn::Status)),
+        );
         widths.push(Constraint::Length(status_w));
     }
     if show_model {
-        header_cells.push(Cell::from(center("MODEL", model_w as usize)).style(col_style(SortColumn::Model)));
+        header_cells.push(
+            Cell::from(center("MODEL", model_w as usize)).style(col_style(SortColumn::Model)),
+        );
         widths.push(Constraint::Length(model_w));
     }
     if show_effort {
-        header_cells.push(Cell::from(center("EFFORT", effort_w as usize)).style(col_style(SortColumn::Effort)));
+        header_cells.push(
+            Cell::from(center("EFFORT", effort_w as usize)).style(col_style(SortColumn::Effort)),
+        );
         widths.push(Constraint::Length(effort_w));
     }
     if show_ctx {
-        header_cells.push(Cell::from(center("CTX", ctx_w as usize)).style(col_style(SortColumn::Ctx)));
+        header_cells
+            .push(Cell::from(center("CTX", ctx_w as usize)).style(col_style(SortColumn::Ctx)));
         widths.push(Constraint::Length(ctx_w));
     }
     if show_cache {
-        header_cells.push(Cell::from(center("CACHE", cache_w as usize)).style(col_style(SortColumn::Cache)));
+        header_cells.push(
+            Cell::from(center("CACHE", cache_w as usize)).style(col_style(SortColumn::Cache)),
+        );
         widths.push(Constraint::Length(cache_w));
     }
     if show_cost {
-        header_cells.push(Cell::from(center("COST", cost_w as usize)).style(col_style(SortColumn::Cost)));
+        header_cells
+            .push(Cell::from(center("COST", cost_w as usize)).style(col_style(SortColumn::Cost)));
         widths.push(Constraint::Length(cost_w));
     }
     if show_duration {
-        header_cells.push(Cell::from(center("DURATION", duration_w as usize)).style(col_style(SortColumn::Duration)));
+        header_cells.push(
+            Cell::from(center("DURATION", duration_w as usize))
+                .style(col_style(SortColumn::Duration)),
+        );
         widths.push(Constraint::Length(duration_w));
     }
 
@@ -155,12 +187,15 @@ pub fn render_threads(
             &t.session_file
         };
         let word_count = if project_w >= 30 { 5 } else { 2 };
-        let last_cmd_words = t.recent_commands.last()
-            .and_then(|s| {
-                let trimmed = s.trim().replace(['\n', '\r'], " ");
-                let words: Vec<&str> = trimmed.split_whitespace().take(word_count).collect();
-                if words.is_empty() { None } else { Some(words.join(" ")) }
-            });
+        let last_cmd_words = t.recent_commands.last().and_then(|s| {
+            let trimmed = s.trim().replace(['\n', '\r'], " ");
+            let words: Vec<&str> = trimmed.split_whitespace().take(word_count).collect();
+            if words.is_empty() {
+                None
+            } else {
+                Some(words.join(" "))
+            }
+        });
         let project_display = if let Some(ref words) = last_cmd_words {
             let avail = (project_w as usize).saturating_sub(session_short.len() + 1);
             let w = truncate_str(words, avail);
@@ -177,8 +212,8 @@ pub fn render_threads(
         let (status_text, status_color) = match t.status {
             ThreadStatus::Running => ("● running", GREEN),
             ThreadStatus::Waiting => ("⏸ waiting", YELLOW),
-            ThreadStatus::Idle    => ("○ idle",    TEXT_IDLE),
-            ThreadStatus::Error   => ("✕ error",   RED),
+            ThreadStatus::Idle => ("○ idle", TEXT_IDLE),
+            ThreadStatus::Error => ("✕ error", RED),
         };
         let status_span = Span::styled(
             center(status_text, status_w as usize),
@@ -190,11 +225,7 @@ pub fn render_threads(
 
         let ctx_used = t.last_ctx_used;
         let ctx_max_val = context_max(&t.last_model);
-        let ctx_str = format!(
-            "{}/{}",
-            format_tokens(ctx_used),
-            format_tokens(ctx_max_val)
-        );
+        let ctx_str = format!("{}/{}", format_tokens(ctx_used), format_tokens(ctx_max_val));
 
         let hit_rate = t.total_usage.hit_rate();
         let hit_color = if hit_rate >= 60.0 {
@@ -226,7 +257,10 @@ pub fn render_threads(
         // PROJECT cell: first 2 words of message (blue) + session id (gray)
         cells.push(Cell::from(Line::from(vec![
             Span::styled(project_display.0.clone(), Style::default().fg(BLUE)),
-            Span::styled(format!(" {}", project_display.1), Style::default().fg(TEXT_IDLE)),
+            Span::styled(
+                format!(" {}", project_display.1),
+                Style::default().fg(TEXT_IDLE),
+            ),
         ])));
 
         if show_status {
@@ -323,19 +357,18 @@ fn format_project_path(path: &str, max_w: usize) -> String {
 
     // Separate root from the rest of the components.
     // root = "~" for home paths, "/first" for absolute paths.
-    let (root, comps): (String, Vec<&str>) =
-        if !home.is_empty() && path.starts_with(&home) {
-            let rest = &path[home.len()..];
-            let c: Vec<&str> = rest.split('/').filter(|s| !s.is_empty()).collect();
-            ("~".to_string(), c)
-        } else {
-            let all: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
-            if all.is_empty() {
-                return "/".to_string();
-            }
-            // Root is /first_component; the rest are the middle+last components.
-            (format!("/{}", all[0]), all[1..].to_vec())
-        };
+    let (root, comps): (String, Vec<&str>) = if !home.is_empty() && path.starts_with(&home) {
+        let rest = &path[home.len()..];
+        let c: Vec<&str> = rest.split('/').filter(|s| !s.is_empty()).collect();
+        ("~".to_string(), c)
+    } else {
+        let all: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+        if all.is_empty() {
+            return "/".to_string();
+        }
+        // Root is /first_component; the rest are the middle+last components.
+        (format!("/{}", all[0]), all[1..].to_vec())
+    };
 
     // Build full path and return it if it fits.
     let full = if comps.is_empty() {

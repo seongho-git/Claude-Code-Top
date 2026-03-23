@@ -153,11 +153,7 @@ impl App {
             }
         }
         self.window_5h_tokens = global_5h.total_input_all() + global_5h.output_tokens;
-        self.window_5h_messages = self
-            .threads
-            .iter()
-            .map(|t| t.window_5h_message_count)
-            .sum();
+        self.window_5h_messages = self.threads.iter().map(|t| t.window_5h_message_count).sum();
         self.window_5h_reset = earliest_5h.map(|t| t + chrono::Duration::hours(5));
 
         self.weekly_cost = self.threads.iter().map(|t| t.weekly_cost).sum();
@@ -192,7 +188,10 @@ impl App {
             self.selected = 0;
         }
 
-        let has_running = self.threads.iter().any(|t| t.status == ThreadStatus::Running);
+        let has_running = self
+            .threads
+            .iter()
+            .any(|t| t.status == ThreadStatus::Running);
         self.fetcher.set_active_mode(has_running);
         self.fetcher.maybe_refresh();
         self.usage_data = self.fetcher.data.clone();
@@ -211,16 +210,15 @@ impl App {
             SortColumn::Status => self
                 .threads
                 .sort_by(|a, b| status_ord(&b.status).cmp(&status_ord(&a.status))),
-            SortColumn::Model => self
+            SortColumn::Model => self.threads.sort_by(|a, b| a.last_model.cmp(&b.last_model)),
+            SortColumn::Effort => self
                 .threads
-                .sort_by(|a, b| a.last_model.cmp(&b.last_model)),
-            SortColumn::Effort => self.threads.sort_by(|a, b| {
-                effort_ord(&b.last_effort)
-                    .cmp(&effort_ord(&a.last_effort))
+                .sort_by(|a, b| effort_ord(&b.last_effort).cmp(&effort_ord(&a.last_effort))),
+            SortColumn::Ctx => self.threads.sort_by(|a, b| {
+                b.total_usage
+                    .total_input_all()
+                    .cmp(&a.total_usage.total_input_all())
             }),
-            SortColumn::Ctx => self
-                .threads
-                .sort_by(|a, b| b.total_usage.total_input_all().cmp(&a.total_usage.total_input_all())),
             SortColumn::Cache => self.threads.sort_by(|a, b| {
                 b.total_usage
                     .hit_rate()
@@ -255,7 +253,11 @@ impl App {
     }
 
     pub fn refresh_interval(&self) -> Duration {
-        Duration::from_secs(2)
+        if self.fetcher.has_pending() {
+            Duration::from_millis(500)
+        } else {
+            Duration::from_secs(2)
+        }
     }
 
     pub fn needs_refresh(&self) -> bool {

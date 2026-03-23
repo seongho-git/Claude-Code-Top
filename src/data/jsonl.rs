@@ -73,11 +73,9 @@ fn do_parse_jsonl(path: &Path) -> CachedFile {
 
         if line.contains("\"type\":\"assistant\"") {
             if let Some(entry) = parse_assistant_line(&line) {
-                let should_insert = entries_by_id
-                    .get(&entry.message_id)
-                    .is_none_or(|existing| {
-                        entry.usage.output_tokens > existing.usage.output_tokens
-                    });
+                let should_insert = entries_by_id.get(&entry.message_id).is_none_or(|existing| {
+                    entry.usage.output_tokens > existing.usage.output_tokens
+                });
                 if should_insert {
                     entries_by_id.insert(entry.message_id.clone(), entry);
                 }
@@ -207,9 +205,10 @@ fn parse_user_message(line: &str) -> Option<String> {
     }
 
     // Filter out system/command entries
-    if text.starts_with('<') && (text.contains("<command-name>")
-        || text.contains("<local-command")
-        || text.contains("<system-reminder>"))
+    if text.starts_with('<')
+        && (text.contains("<command-name>")
+            || text.contains("<local-command")
+            || text.contains("<system-reminder>"))
     {
         return None;
     }

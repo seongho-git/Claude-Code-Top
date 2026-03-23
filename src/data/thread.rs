@@ -49,7 +49,11 @@ pub fn decode_project_path(encoded: &str) -> String {
 }
 
 /// Scan all project folders and build thread list.
-pub fn scan_threads(cache: &mut JsonlCache, sys: &mut System, path_cache: &mut PathCache) -> Vec<Thread> {
+pub fn scan_threads(
+    cache: &mut JsonlCache,
+    sys: &mut System,
+    path_cache: &mut PathCache,
+) -> Vec<Thread> {
     let claude_dir = match dirs::home_dir() {
         Some(h) => h.join(".claude").join("projects"),
         None => return Vec::new(),
@@ -78,8 +82,10 @@ pub fn scan_threads(cache: &mut JsonlCache, sys: &mut System, path_cache: &mut P
         let name = process.name().to_string_lossy().to_lowercase();
         // Check exe by filename only (not full path) to avoid matching cctop's
         // install directory (~/.claude-code-top/cctop).
-        let is_claude = name.contains("claude") || name.contains("ccd-cli")
-            || process.exe()
+        let is_claude = name.contains("claude")
+            || name.contains("ccd-cli")
+            || process
+                .exe()
                 .and_then(|e| e.file_name())
                 .map(|fname| {
                     let s = fname.to_string_lossy().to_lowercase();
@@ -91,7 +97,8 @@ pub fn scan_threads(cache: &mut JsonlCache, sys: &mut System, path_cache: &mut P
                 let cwd_str = cwd.to_string_lossy().to_string();
                 let pid_u32 = pid.as_u32();
                 // Keep only the most recently started process (highest PID)
-                claude_pids.entry(cwd_str)
+                claude_pids
+                    .entry(cwd_str)
                     .and_modify(|existing_pid: &mut u32| {
                         if pid_u32 > *existing_pid {
                             *existing_pid = pid_u32;
@@ -243,7 +250,8 @@ fn find_uuid_sessions(project_dir: &Path) -> Vec<(String, Vec<PathBuf>)> {
                 if let Ok(sub) = fs::read_dir(&subagents) {
                     for se in sub.flatten() {
                         let sp = se.path();
-                        if sp.is_file() && sp.extension().and_then(|e| e.to_str()) == Some("jsonl") {
+                        if sp.is_file() && sp.extension().and_then(|e| e.to_str()) == Some("jsonl")
+                        {
                             files.push(sp);
                         }
                     }
@@ -299,12 +307,18 @@ fn build_thread(
         all_user_messages.extend(parsed.user_messages);
 
         if let Some((ts, ref model)) = parsed.last_model_cmd {
-            if last_model_cmd.as_ref().is_none_or(|(prev_ts, _)| ts > *prev_ts) {
+            if last_model_cmd
+                .as_ref()
+                .is_none_or(|(prev_ts, _)| ts > *prev_ts)
+            {
                 last_model_cmd = Some((ts, model.clone()));
             }
         }
         if let Some((ts, ref effort)) = parsed.last_effort_cmd {
-            if last_effort_cmd.as_ref().is_none_or(|(prev_ts, _)| ts > *prev_ts) {
+            if last_effort_cmd
+                .as_ref()
+                .is_none_or(|(prev_ts, _)| ts > *prev_ts)
+            {
                 last_effort_cmd = Some((ts, effort.clone()));
             }
         }
@@ -417,7 +431,10 @@ fn build_thread(
         latest_mtime
     };
 
-    if last_model.is_empty() && total_usage.output_tokens == 0 && latest_mtime == DateTime::<Utc>::MIN_UTC {
+    if last_model.is_empty()
+        && total_usage.output_tokens == 0
+        && latest_mtime == DateTime::<Utc>::MIN_UTC
+    {
         return None;
     }
 

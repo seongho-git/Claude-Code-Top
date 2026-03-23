@@ -1,12 +1,15 @@
 use std::fs;
+use std::path::Path;
 use std::path::PathBuf;
 use std::time::Instant;
 
 use chrono::{DateTime, Local, Utc};
 use serde::{Deserialize, Serialize};
 
+use crate::paths::{app_dir, ensure_app_dir, legacy_usage_cache_path, usage_cache_path};
+
 /// Server-side usage data from the Anthropic OAuth usage API.
-/// Cached to ~/.cctop-usage.json and refreshed every ~5 minutes.
+/// Cached to ~/.claude-code-top/usage.json and refreshed every ~5 minutes.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UsageData {
     pub session_pct: f64,
@@ -121,25 +124,28 @@ struct ExtraUsage {
 // ── Public interface ──────────────────────────────────────────────────────────
 
 fn usage_file_path() -> Option<PathBuf> {
-    dirs::home_dir().map(|h| h.join(".cctop-usage.json"))
+    usage_cache_path()
+}
+
+fn load_usage_from_path(path: &Path) -> Option<UsageData> {
+    let data = fs::read_to_string(path).ok()?;
+    serde_json::from_str(&data).ok()
 }
 
 pub fn load_cached_usage() -> UsageData {
-    let path = match usage_file_path() {
-        Some(p) => p,
-        None => return UsageData::default(),
-    };
-    let data = match fs::read_to_string(&path) {
-        Ok(d) => d,
-        Err(_) => return UsageData::default(),
-    };
-    serde_json::from_str(&data).unwrap_or_default()
+    [usage_file_path(), legacy_usage_cache_path()]
+        .into_iter()
+        .flatten()
+        .find_map(|path| load_usage_from_path(&path))
+        .unwrap_or_default()
 }
 
 fn save_usage(data: &UsageData) {
-    if let Some(path) = usage_file_path() {
-        if let Ok(json) = serde_json::to_string_pretty(data) {
-            let _ = fs::write(path, json);
+    if ensure_app_dir().is_some() {
+        if let Some(path) = usage_file_path() {
+            if let Ok(json) = serde_json::to_string_pretty(data) {
+                let _ = fs::write(path, json);
+            }
         }
     }
 }
@@ -217,38 +223,50 @@ pub fn fetch_api_usage() -> Result<UsageData, String> {
 }
 
 pub fn fetch_usage_via_script() -> Result<UsageData, String> {
-    let home_dir = dirs::home_dir().ok_or("Could not find home directory")?;
-    let claude_code_top_dir = home_dir.join(".claude-code-top");
-    
-    // Check ~/.claude-code-top/update.sh first, fallback to ./update.sh
-    let mut script_path = claude_code_top_dir.join("update.sh");
-    if !script_path.exists() {
-        if let Ok(current_dir) = std::env::current_dir() {
-            let local_path = current_dir.join("update.sh");
-            if local_path.exists() {
-                script_path = local_path;
-            }
-        }
-    }
+    let claude_code_top_dir = app_dir().ok_or("Could not find home directory")?;
 
-    if !script_path.exists() {
-        return Err("update.sh not found in ~/.claude-code-top or current directory".to_string());
-    }
+    // Prefer a script next to the current executable, then the repo-local copy
+    // when developing via `cargo run`, and finally the installed default path.
+    let exe_local_path = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|dir| dir.join("update.sh")));
+    let cwd_local_path = std::env::current_dir()
+        .ok()
+        .map(|dir| dir.join("update.sh"));
+    let installed_path = claude_code_top_dir.join("update.sh");
 
-    let output = std::process::Command::new("sh")
+    let script_path = [exe_local_path, cwd_local_path, Some(installed_path)]
+        .into_iter()
+        .flatten()
+        .find(|path| path.exists())
+        .ok_or_else(|| {
+            "update.sh not found next to the executable, in the current directory, or in ~/.claude-code-top".to_string()
+        })?;
+
+    let shell = std::env::var("SHELL")
+        .ok()
+        .filter(|s| Path::new(s).exists())
+        .unwrap_or_else(|| "sh".to_string());
+    let current_dir = std::env::current_dir()
+        .map_err(|e| format!("Failed to resolve current directory for update.sh: {}", e))?;
+
+    let output = std::process::Command::new(&shell)
         .arg(&script_path)
+        .current_dir(current_dir)
         .output()
-        .map_err(|e| format!("Failed to execute update.sh: {}", e))?;
+        .map_err(|e| format!("Failed to execute update.sh via {}: {}", shell, e))?;
 
     if !output.status.success() {
         let err_msg = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("update.sh failed with status: {}. Error: {}", output.status, err_msg));
+        return Err(format!(
+            "update.sh failed with status: {}. Error: {}",
+            output.status, err_msg
+        ));
     }
 
     let text = String::from_utf8_lossy(&output.stdout);
-    
-    // Ensure ~/.claude-code-top directory exists
-    let _ = fs::create_dir_all(&claude_code_top_dir);
+
+    let _ = ensure_app_dir();
     // Save raw parsing info text into the folder
     let _ = fs::write(claude_code_top_dir.join("usage_raw.txt"), text.as_ref());
 
@@ -265,29 +283,51 @@ pub fn fetch_usage_via_script() -> Result<UsageData, String> {
     Ok(data)
 }
 
+pub fn has_credentials() -> bool {
+    dirs::home_dir()
+        .map(|h| h.join(".claude").join(".credentials.json").exists())
+        .unwrap_or(false)
+}
+
 pub fn fetch_api_usage_with_fallback() -> Result<UsageData, String> {
-    match fetch_api_usage() {
-        Ok(data) => Ok(data),
-        Err(api_err) => {
-            // Fallback to update.sh script
-            match fetch_usage_via_script() {
-                Ok(data) => Ok(data),
-                Err(script_err) => {
-                    Err(format!("API error: {} | Script fallback error: {}", api_err, script_err))
+    if has_credentials() {
+        // Credentials exist: try API first; only fall back to tmux script on error
+        match fetch_api_usage() {
+            Ok(data) => return Ok(data),
+            Err(api_err) => {
+                // API failed despite having credentials — try tmux script, then give up
+                match fetch_usage_via_script() {
+                    Ok(data) => return Ok(data),
+                    Err(script_err) => {
+                        return Err(format!(
+                            "API error: {} | Script fallback error: {}",
+                            api_err, script_err
+                        ));
+                    }
                 }
             }
         }
     }
+
+    // No credentials: go straight to tmux script (no API attempt)
+    fetch_usage_via_script()
 }
 
 // ── App-level fetch with cooldown ─────────────────────────────────────────────
 
-/// Wraps the API fetch with a cooldown so we don't hammer the API.
+use std::sync::{Arc, Mutex};
+
+type FetchResult = Arc<Mutex<Option<Result<UsageData, String>>>>;
+
+/// Wraps the fetch with a cooldown and runs it on a background thread
+/// so the TUI never blocks waiting for the script (which can take ~10 s).
 pub struct UsageFetcher {
     pub data: UsageData,
     last_attempt: Option<Instant>,
     cooldown_secs: u64,
     pub last_error: Option<String>,
+    /// Shared slot filled by the background thread when the fetch completes.
+    pending: Option<FetchResult>,
 }
 
 impl UsageFetcher {
@@ -297,6 +337,7 @@ impl UsageFetcher {
             last_attempt: None,
             cooldown_secs: 300, // 5 minutes
             last_error: None,
+            pending: None,
         }
     }
 
@@ -305,8 +346,41 @@ impl UsageFetcher {
         self.cooldown_secs = if has_running { 60 } else { 300 };
     }
 
-    /// Refresh if stale and cooldown has elapsed. Returns true if data changed.
+    pub fn has_pending(&self) -> bool {
+        self.pending.is_some()
+    }
+
+    /// Non-blocking refresh:
+    /// 1. If a background fetch is in flight, check whether it finished and
+    ///    harvest the result.
+    /// 2. If no fetch is running and the cooldown has elapsed, spawn a new one.
+    /// Returns true if `self.data` was updated.
     pub fn maybe_refresh(&mut self) -> bool {
+        // ── Harvest completed background fetch ────────────────────────────
+        if let Some(slot) = self.pending.clone() {
+            if let Ok(mut guard) = slot.try_lock() {
+                if let Some(result) = guard.take() {
+                    self.pending = None;
+                    match result {
+                        Ok(mut new_data) => {
+                            new_data.updated_at = Utc::now();
+                            self.data = new_data;
+                            self.last_error = None;
+                            return true;
+                        }
+                        Err(e) => {
+                            self.last_error = Some(e);
+                        }
+                    }
+                }
+            }
+            // Still in flight if we didn't just clear it above
+            if self.pending.is_some() {
+                return false;
+            }
+        }
+
+        // ── Decide whether to kick off a new fetch ────────────────────────
         let should_attempt = match self.last_attempt {
             None => true,
             Some(t) => t.elapsed().as_secs() >= self.cooldown_secs,
@@ -318,22 +392,25 @@ impl UsageFetcher {
 
         self.last_attempt = Some(Instant::now());
 
-        match fetch_api_usage_with_fallback() {
-            Ok(new_data) => {
-                self.data = new_data;
-                self.last_error = None;
-                true
+        // Spawn background thread; result is placed into the shared slot
+        let slot: FetchResult = Arc::new(Mutex::new(None));
+        let slot_clone = Arc::clone(&slot);
+        std::thread::spawn(move || {
+            let result = fetch_api_usage_with_fallback();
+            if let Ok(mut guard) = slot_clone.lock() {
+                *guard = Some(result);
             }
-            Err(e) => {
-                self.last_error = Some(e);
-                false
-            }
-        }
+        });
+        self.pending = Some(slot);
+
+        false
     }
 
-    /// Force immediate refresh regardless of cooldown.
+    /// Force immediate refresh: reset cooldown and spawn a new background fetch
+    /// (cancels any in-flight fetch by dropping its slot).
     pub fn force_refresh(&mut self) {
         self.last_attempt = None;
+        self.pending = None; // drop in-flight fetch
         self.maybe_refresh();
     }
 }
@@ -348,7 +425,12 @@ pub fn parse_usage_text(text: &str) -> UsageData {
 
     let lines: Vec<&str> = text.lines().map(|l| l.trim()).collect();
 
-    enum Section { None, Session, Weekly, Extra }
+    enum Section {
+        None,
+        Session,
+        Weekly,
+        Extra,
+    }
     let mut section = Section::None;
 
     for line in &lines {
@@ -418,10 +500,16 @@ pub fn update_usage_interactive() {
     match fetch_api_usage_with_fallback() {
         Ok(data) => {
             println!("  ✓ Fetched live data:");
-            println!("    Session: {:.0}% — Resets {}", data.session_pct, data.session_reset);
-            println!("    Weekly:  {:.0}% — Resets {}", data.weekly_pct, data.weekly_reset);
+            println!(
+                "    Session: {:.0}% — Resets {}",
+                data.session_pct, data.session_reset
+            );
+            println!(
+                "    Weekly:  {:.0}% — Resets {}",
+                data.weekly_pct, data.weekly_reset
+            );
             println!("    Extra:   {:.1}% {}", data.extra_pct, data.extra_spent);
-            println!("\n  Saved to ~/.cctop-usage.json");
+            println!("\n  Saved to ~/.claude-code-top/usage.json");
             return;
         }
         Err(e) => {
@@ -443,7 +531,9 @@ pub fn update_usage_interactive() {
         }
         if line.trim().is_empty() {
             empty_count += 1;
-            if empty_count >= 2 { break; }
+            if empty_count >= 2 {
+                break;
+            }
         } else {
             empty_count = 0;
         }
@@ -457,10 +547,19 @@ pub fn update_usage_interactive() {
 
     let data = parse_usage_text(&input);
     println!("\n  Parsed:");
-    println!("    Session: {:.0}% — Resets {}", data.session_pct, data.session_reset);
-    println!("    Weekly:  {:.0}% — Resets {}", data.weekly_pct, data.weekly_reset);
-    println!("    Extra:   {:.0}% {} — Resets {}", data.extra_pct, data.extra_spent, data.extra_reset);
+    println!(
+        "    Session: {:.0}% — Resets {}",
+        data.session_pct, data.session_reset
+    );
+    println!(
+        "    Weekly:  {:.0}% — Resets {}",
+        data.weekly_pct, data.weekly_reset
+    );
+    println!(
+        "    Extra:   {:.0}% {} — Resets {}",
+        data.extra_pct, data.extra_spent, data.extra_reset
+    );
 
     save_usage(&data);
-    println!("\n  Saved to ~/.cctop-usage.json");
+    println!("\n  Saved to ~/.claude-code-top/usage.json");
 }

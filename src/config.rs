@@ -1,34 +1,45 @@
 use std::fs;
 use std::io::{self, Write};
-use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
 use crate::data::types::PlanType;
+use crate::paths::{config_path, ensure_app_dir, legacy_config_path};
 
 #[derive(Serialize, Deserialize)]
 struct ConfigFile {
     plan: String,
 }
 
-fn config_path() -> Option<PathBuf> {
-    dirs::home_dir().map(|h| h.join(".cctop.json"))
-}
-
 pub fn load_plan() -> Option<PlanType> {
-    let path = config_path()?;
-    let data = fs::read_to_string(path).ok()?;
-    let config: ConfigFile = serde_json::from_str(&data).ok()?;
-    PlanType::from_str(&config.plan)
+    let paths = [config_path(), legacy_config_path()];
+
+    for path in paths.into_iter().flatten() {
+        let data = match fs::read_to_string(&path) {
+            Ok(data) => data,
+            Err(_) => continue,
+        };
+        let config: ConfigFile = match serde_json::from_str(&data) {
+            Ok(config) => config,
+            Err(_) => continue,
+        };
+        if let Some(plan) = PlanType::from_str(&config.plan) {
+            return Some(plan);
+        }
+    }
+
+    None
 }
 
 pub fn save_plan(plan: PlanType) {
-    if let Some(path) = config_path() {
-        let config = ConfigFile {
-            plan: plan.label().to_lowercase(),
-        };
-        if let Ok(json) = serde_json::to_string_pretty(&config) {
-            let _ = fs::write(path, json);
+    if ensure_app_dir().is_some() {
+        if let Some(path) = config_path() {
+            let config = ConfigFile {
+                plan: plan.label().to_lowercase(),
+            };
+            if let Ok(json) = serde_json::to_string_pretty(&config) {
+                let _ = fs::write(path, json);
+            }
         }
     }
 }
