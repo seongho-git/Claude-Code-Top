@@ -216,6 +216,70 @@ pub fn fetch_api_usage() -> Result<UsageData, String> {
     Ok(data)
 }
 
+pub fn fetch_usage_via_script() -> Result<UsageData, String> {
+    let home_dir = dirs::home_dir().ok_or("Could not find home directory")?;
+    let claude_code_top_dir = home_dir.join(".claude-code-top");
+    
+    // Check ~/.claude-code-top/update.sh first, fallback to ./update.sh
+    let mut script_path = claude_code_top_dir.join("update.sh");
+    if !script_path.exists() {
+        if let Ok(current_dir) = std::env::current_dir() {
+            let local_path = current_dir.join("update.sh");
+            if local_path.exists() {
+                script_path = local_path;
+            }
+        }
+    }
+
+    if !script_path.exists() {
+        return Err("update.sh not found in ~/.claude-code-top or current directory".to_string());
+    }
+
+    let output = std::process::Command::new("sh")
+        .arg(&script_path)
+        .output()
+        .map_err(|e| format!("Failed to execute update.sh: {}", e))?;
+
+    if !output.status.success() {
+        let err_msg = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("update.sh failed with status: {}. Error: {}", output.status, err_msg));
+    }
+
+    let text = String::from_utf8_lossy(&output.stdout);
+    
+    // Ensure ~/.claude-code-top directory exists
+    let _ = fs::create_dir_all(&claude_code_top_dir);
+    // Save raw parsing info text into the folder
+    let _ = fs::write(claude_code_top_dir.join("usage_raw.txt"), text.as_ref());
+
+    let mut data = parse_usage_text(&text);
+    // Ensure updated_at is always current
+    data.updated_at = Utc::now();
+    save_usage(&data);
+
+    // Save the parsed data to the folder for info/debugging
+    if let Ok(json) = serde_json::to_string_pretty(&data) {
+        let _ = fs::write(claude_code_top_dir.join("usage_parsed.json"), json);
+    }
+
+    Ok(data)
+}
+
+pub fn fetch_api_usage_with_fallback() -> Result<UsageData, String> {
+    match fetch_api_usage() {
+        Ok(data) => Ok(data),
+        Err(api_err) => {
+            // Fallback to update.sh script
+            match fetch_usage_via_script() {
+                Ok(data) => Ok(data),
+                Err(script_err) => {
+                    Err(format!("API error: {} | Script fallback error: {}", api_err, script_err))
+                }
+            }
+        }
+    }
+}
+
 // ── App-level fetch with cooldown ─────────────────────────────────────────────
 
 /// Wraps the API fetch with a cooldown so we don't hammer the API.
@@ -254,7 +318,7 @@ impl UsageFetcher {
 
         self.last_attempt = Some(Instant::now());
 
-        match fetch_api_usage() {
+        match fetch_api_usage_with_fallback() {
             Ok(new_data) => {
                 self.data = new_data;
                 self.last_error = None;
@@ -350,8 +414,8 @@ pub fn update_usage_interactive() {
     println!("\n  cctop — Update Usage Data\n");
 
     // Try API first
-    println!("  Trying automatic fetch from Anthropic API...");
-    match fetch_api_usage() {
+    println!("  Trying automatic fetch from Anthropic API or fallback script...");
+    match fetch_api_usage_with_fallback() {
         Ok(data) => {
             println!("  ✓ Fetched live data:");
             println!("    Session: {:.0}% — Resets {}", data.session_pct, data.session_reset);

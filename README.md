@@ -18,18 +18,31 @@ Track token usage, costs, session quotas, and active threads — all in real-tim
 
 ## Requirements
 
-- **Rust toolchain** (`cargo`) — see [Install Rust](#install-rust) below
 - **Claude Code** installed with local data at `~/.claude/`
+- **Rust toolchain** (`cargo`)
+- **tmux** (for fallback API fetching on macOS)
 
 | OS | Support Status |
 |:---:|:---|
 | **Ubuntu** | ✅ Supported |
-| **macOS** | 🚧 In development |
-| **Windows**| 🚧 In development |
+| **macOS** | ✅ Supported |
+
+> 🙋‍♂️ **Need Support for Another OS?**  
+> Feel free to leave a request via [Email](mailto:seongho-kim@yonsei.ac.kr) or [GitHub Issues](https://github.com/seongho-git/Claude-Code-Top/issues)!
 
 ---
 
-## Install Rust
+## Dependencies Installation
+
+### 1. Install Claude Code
+
+If you haven't installed Claude Code yet:
+
+```bash
+curl -fsSL https://claude.ai/install.sh | bash
+```
+
+### 2. Install Rust
 
 If you don't have Rust installed, run the official installer:
 
@@ -37,19 +50,27 @@ If you don't have Rust installed, run the official installer:
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
-Then reload your shell environment:
-
 ```bash
+# Then reload your shell environment:
 source "$HOME/.cargo/env"
-```
 
-Verify the installation:
-
-```bash
+# Verify the installation:
 cargo --version
 ```
 
 > For more details, see the official guide at **https://rustup.rs/**
+
+### 3. Install tmux (Required)
+
+Since `cctop` uses `tmux` in the background as a fallback for usage tracking when direct API fetch fails (especially on macOS), you must have `tmux` installed.
+
+```bash
+# macOS (using Homebrew)
+brew install tmux
+
+# Ubuntu/Debian
+sudo apt install tmux
+```
 
 ---
 
@@ -92,7 +113,7 @@ cctop --plan pro         # Set plan: pro, max5, max20
 cctop --update-usage     # Refresh quota data from Anthropic API
 ```
 
-`--update-usage` first attempts a live fetch from the Anthropic OAuth API. If that fails (e.g. no credentials), it falls back to prompting you to paste the output of `/usage` from Claude Code.
+`--update-usage` first attempts a live fetch from the Anthropic OAuth API. If that fails (e.g. no credentials), it automatically falls back to running `update.sh` in the background (using tmux) to safely scrape the `/usage` output. If this script is unavailable, it falls back to prompting you to paste the text manually.
 
 ### Keybindings
 
@@ -165,7 +186,7 @@ Split into two halves at the bottom of the screen:
 1. **Process Detection** — Scans running processes for `claude` executables via `sysinfo`, matches each process's CWD to a project directory under `~/.claude/projects/`
 2. **JSONL Parsing** — Reads conversation logs at `~/.claude/projects/<encoded-path>/*.jsonl` with mtime-based caching to avoid redundant I/O
 3. **Cost Calculation** — Applies per-model pricing (Opus / Sonnet / Haiku) including cache read/write rates to compute accurate cost and savings estimates
-4. **OAuth Quota** — Fetches live session, weekly, and extra usage from `api.anthropic.com/api/oauth/usage` using the OAuth token stored by Claude Code
+4. **OAuth Quota** — Fetches live session, weekly, and extra usage from `api.anthropic.com/api/oauth/usage` using the OAuth token stored by Claude Code. If the API fetch fails, a fallback script (`update.sh`) runs Claude Code automatically in the background via `tmux` to parse the `/usage` info.
 5. **2s Refresh Cycle** — Lightweight polling: only process metadata is refreshed each cycle; JSONL files are re-parsed only when their mtime changes
 
 ---
